@@ -35,7 +35,15 @@
         {
           "icon": "./assets/images/icon.png",
           "color": "#FF453A",
-          "defaultChannel": "default"
+          "defaultChannel": "default",
+          "sounds": [
+            "./assets/sounds/mixkit_urgent_simple_tone_loop_2976.wav",
+            "./assets/sounds/mixkit_access_allowed_tone_2869.wav",
+            "./assets/sounds/mixkit_bell_notification_933.wav",
+            "./assets/sounds/mixkit_clear_announce_tones_2861.wav",
+            "./assets/sounds/mixkit_game_notification_wave_alarm_987.wav",
+            "./assets/sounds/mixkit_happy_bells_notification_937.wav"
+          ]
         }
       ],
       [

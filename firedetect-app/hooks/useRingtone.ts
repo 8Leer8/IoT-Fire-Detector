@@ -8,23 +8,24 @@ export interface Ringtone {
 }
 
 export const RINGTONE_STORAGE_KEY = 'selectedRingtone';
+export const DEFAULT_NOTIFICATION_CHANNEL_ID = 'default';
 
 const SOUND_FILENAMES = [
-  'mixkit-urgent-simple-tone-loop-2976.wav',
-  'mixkit-access-allowed-tone-2869.wav',
-  'mixkit-bell-notification-933.wav',
-  'mixkit-clear-announce-tones-2861.wav',
-  'mixkit-game-notification-wave-alarm-987.wav',
-  'mixkit-happy-bells-notification-937.wav',
+  'mixkit_urgent_simple_tone_loop_2976.wav',
+  'mixkit_access_allowed_tone_2869.wav',
+  'mixkit_bell_notification_933.wav',
+  'mixkit_clear_announce_tones_2861.wav',
+  'mixkit_game_notification_wave_alarm_987.wav',
+  'mixkit_happy_bells_notification_937.wav',
 ] as const;
 
 const toReadableLabel = (filename: string): string => {
   const withoutExtension = filename.replace(/\.wav$/i, '');
-  const withoutPrefix = withoutExtension.replace(/^mixkit-/, '');
-  const withoutTrailingNumbers = withoutPrefix.replace(/[-\d]+$/, '');
+  const withoutPrefix = withoutExtension.replace(/^mixkit[_-]?/, '');
+  const withoutTrailingNumbers = withoutPrefix.replace(/[_-]?\d+$/, '');
 
   return withoutTrailingNumbers
-    .split('-')
+    .split(/[_-]/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
@@ -38,6 +39,13 @@ export const RINGTONES: Ringtone[] = SOUND_FILENAMES.map((filename) => {
     filename,
   };
 });
+
+export const getNotificationChannelIdForRingtone = (ringtoneId: string): string => {
+  if (RINGTONES.some((ringtone) => ringtone.id === ringtoneId)) {
+    return ringtoneId;
+  }
+  return DEFAULT_NOTIFICATION_CHANNEL_ID;
+};
 
 const getDefaultRingtone = (): Ringtone => RINGTONES[0];
 

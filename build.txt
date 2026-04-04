@@ -1,0 +1,8 @@
+Development
+eas build --platform android --profile development
+
+Production
+eas build --platform android --profile production
+
+Preview
+eas build --platform android --profile preview

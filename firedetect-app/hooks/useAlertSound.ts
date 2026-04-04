@@ -1,16 +1,17 @@
 import { useCallback, useRef } from 'react';
 import { AudioPlayer, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Vibration } from 'react-native';
 
 import { RINGTONE_STORAGE_KEY, RINGTONES } from '@/hooks/useRingtone';
 
 export const SOUND_MAP: Record<string, any> = {
-  'mixkit-access-allowed-tone-2869': require('../assets/sounds/mixkit-access-allowed-tone-2869.wav'),
-  'mixkit-bell-notification-933': require('../assets/sounds/mixkit-bell-notification-933.wav'),
-  'mixkit-clear-announce-tones-2861': require('../assets/sounds/mixkit-clear-announce-tones-2861.wav'),
-  'mixkit-game-notification-wave-alarm-987': require('../assets/sounds/mixkit-game-notification-wave-alarm-987.wav'),
-  'mixkit-happy-bells-notification-937': require('../assets/sounds/mixkit-happy-bells-notification-937.wav'),
-  'mixkit-urgent-simple-tone-loop-2976': require('../assets/sounds/mixkit-urgent-simple-tone-loop-2976.wav'),
+  'mixkit_access_allowed_tone_2869': require('../assets/sounds/mixkit_access_allowed_tone_2869.wav'),
+  'mixkit_bell_notification_933': require('../assets/sounds/mixkit_bell_notification_933.wav'),
+  'mixkit_clear_announce_tones_2861': require('../assets/sounds/mixkit_clear_announce_tones_2861.wav'),
+  'mixkit_game_notification_wave_alarm_987': require('../assets/sounds/mixkit_game_notification_wave_alarm_987.wav'),
+  'mixkit_happy_bells_notification_937': require('../assets/sounds/mixkit_happy_bells_notification_937.wav'),
+  'mixkit_urgent_simple_tone_loop_2976': require('../assets/sounds/mixkit_urgent_simple_tone_loop_2976.wav'),
 };
 
 export const useAlertSound = () => {
@@ -36,6 +37,7 @@ export const useAlertSound = () => {
     }
 
     soundRef.current.remove();
+    Vibration.cancel();
 
     soundRef.current = null;
     activeSoundIdRef.current = null;
@@ -68,6 +70,7 @@ export const useAlertSound = () => {
     nextSound.loop = true;
     nextSound.volume = 1;
     nextSound.play();
+    Vibration.vibrate([0, 500, 250, 500], true);
 
     soundRef.current = nextSound;
     activeSoundIdRef.current = selectedId;

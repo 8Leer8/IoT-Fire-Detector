@@ -1,4 +1,6 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 export type FireStatus = 'fire' | 'normal';
 export type StallType = 'stall_1' | 'stall_2' | 'both';
@@ -23,11 +25,16 @@ export interface LatestStatusResponse {
 	message?: string;
 }
 
-const getBaseUrl = (): string => {
-	const baseUrl = process.env.EXPO_PUBLIC_API_URL;
+export const API_URL_STORAGE_KEY = 'apiUrl';
+
+const getBaseUrl = async (): Promise<string> => {
+	const storedApiUrl = await AsyncStorage.getItem(API_URL_STORAGE_KEY);
+	const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
+	const appConfigApiUrl = (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? undefined;
+	const baseUrl = (storedApiUrl || envApiUrl || appConfigApiUrl || '').trim();
 
 	if (!baseUrl) {
-		throw new Error('EXPO_PUBLIC_API_URL is not set.');
+		throw new Error('No API URL configured. Set EXPO_PUBLIC_API_URL or save API URL in settings.');
 	}
 
 	return baseUrl.replace(/\/$/, '');
@@ -35,25 +42,32 @@ const getBaseUrl = (): string => {
 
 export const registerToken = async (
 	token: string,
-	tone: string = 'default'
+	channelId: string = 'default'
 ): Promise<void> => {
-	await axios.post(`${getBaseUrl()}/api/register-token/`, { token, tone });
+	const baseUrl = await getBaseUrl();
+	await axios.post(`${baseUrl}/api/register-token/`, {
+		token,
+		channel_id: channelId,
+	});
 };
 
 export const getLatestStatus = async (): Promise<LatestStatusResponse> => {
+	const baseUrl = await getBaseUrl();
 	const response = await axios.get<LatestStatusResponse>(
-		`${getBaseUrl()}/api/latest-status/`
+		`${baseUrl}/api/latest-status/`
 	);
 	return response.data;
 };
 
 export const getAlertHistory = async (): Promise<FireAlertItem[]> => {
-	const response = await axios.get<FireAlertItem[]>(`${getBaseUrl()}/api/alerts/`);
+	const baseUrl = await getBaseUrl();
+	const response = await axios.get<FireAlertItem[]>(`${baseUrl}/api/alerts/`);
 	return response.data;
 };
 
 export const resolveAlert = async (id: number): Promise<void> => {
-	await axios.post(`${getBaseUrl()}/api/alerts/${id}/resolve/`);
+	const baseUrl = await getBaseUrl();
+	await axios.post(`${baseUrl}/api/alerts/${id}/resolve/`);
 };
 
 export interface SensorStatusResponse {
@@ -62,8 +76,9 @@ export interface SensorStatusResponse {
 }
 
 export const getSensorStatus = async (): Promise<SensorStatusResponse> => {
+	const baseUrl = await getBaseUrl();
     const response = await axios.get<SensorStatusResponse>(
-        `${getBaseUrl()}/api/sensor-status/`
+		`${baseUrl}/api/sensor-status/`
     );
     return response.data;
 };

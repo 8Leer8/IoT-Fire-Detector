@@ -13,11 +13,15 @@ from .serializers import FireAlertSerializer
 class RegisterTokenView(APIView):
 	def post(self, request):
 		token = request.data.get('token')
+		channel_id = request.data.get('channel_id') or request.data.get('tone') or 'default'
 
 		if not token:
 			return Response({'message': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-		DeviceToken.objects.get_or_create(token=token)
+		device_token, _ = DeviceToken.objects.get_or_create(token=token)
+		if device_token.notification_channel != channel_id:
+			device_token.notification_channel = channel_id
+			device_token.save(update_fields=['notification_channel'])
 		return Response({'message': 'Token registered'}, status=status.HTTP_200_OK)
 
 
@@ -80,11 +84,13 @@ class FireAlertView(APIView):
 				alert_body = f'Fire detected in {stall_label}. Take action immediately.'
 
 			for device_token in DeviceToken.objects.all():
+				channel_id = device_token.notification_channel or 'default'
 				payload = {
 					'to': device_token.token,
 					'title': f'Fire Detected - {stall_label}',
 					'body': alert_body,
 					'sound': 'default',
+					'channelId': channel_id,
 					'priority': 'high',
 				}
 				try:
