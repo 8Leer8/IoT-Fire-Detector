@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "816489101393",
+    "project_id": "firedetect-app",
+    "storage_bucket": "firedetect-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:816489101393:android:78c9bc4c79938286e46070",
+        "android_client_info": {
+          "package_name": "com.mards.firedetectapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfJgzx6VerJ62XJPqXuhLvoev1vwUx6n0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
