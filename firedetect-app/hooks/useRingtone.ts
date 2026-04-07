@@ -8,7 +8,7 @@ export interface Ringtone {
 }
 
 export const RINGTONE_STORAGE_KEY = 'selectedRingtone';
-export const DEFAULT_NOTIFICATION_CHANNEL_ID = 'default';
+export const DEFAULT_NOTIFICATION_CHANNEL_ID = 'mixkit_urgent_simple_tone_loop_2976';
 
 const SOUND_FILENAMES = [
   'mixkit_urgent_simple_tone_loop_2976.wav',

@@ -47,13 +47,14 @@ const usePushNotification = (): string | null => {
 
 				if (Platform.OS === 'android') {
 					const alertVibrationPattern = [0, 500, 250, 500, 250, 700];
+					const fallbackSound = 'mixkit_urgent_simple_tone_loop_2976.wav';
 
 					await Notifications.setNotificationChannelAsync('default', {
-						name: 'default',
+						name: 'Default Alert',
 						importance: Notifications.AndroidImportance.MAX,
 						vibrationPattern: alertVibrationPattern,
 						lightColor: '#FF453A',
-						sound: 'default',
+						sound: fallbackSound,
 					});
 
 					for (const ringtone of RINGTONES) {

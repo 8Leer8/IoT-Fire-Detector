@@ -4,6 +4,7 @@ from django.db import models
 class DeviceToken(models.Model):
 	token = models.CharField(max_length=255, unique=True)
 	notification_channel = models.CharField(max_length=120, default='default')
+	last_seen_at = models.DateTimeField(null=True, blank=True)
 	created_at = models.DateTimeField(auto_now_add=True)
 
 	def __str__(self):
