@@ -23,6 +23,3 @@ media/
 
 # macOS
 .DS_Store
-
-# own files
-../build.txt

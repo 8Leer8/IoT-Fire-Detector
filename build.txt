@@ -6,3 +6,6 @@ eas build --platform android --profile production
 
 Preview
 eas build --platform android --profile preview
+
+gi off nako ang data api sa supabase
+directions = integrations -> data api

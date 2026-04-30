@@ -40,6 +40,8 @@ class FireAlert(models.Model):
 
 class SensorStatus(models.Model):
 	is_online = models.BooleanField(default=False)
+	stall1 = models.BooleanField(default=False)
+	stall2 = models.BooleanField(default=False)
 	last_seen = models.DateTimeField(auto_now=True)
 
 	class Meta:

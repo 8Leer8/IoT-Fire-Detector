@@ -4,12 +4,19 @@ import time
 from datetime import timedelta
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from rest_framework import permissions
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.parsers import FormParser, JSONParser
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import DeviceToken, FireAlert, SensorStatus
-from .serializers import FireAlertSerializer
+from .serializers import (
+	FireAlertIngestSerializer,
+	FireAlertSerializer,
+	SensorStatusIngestSerializer,
+)
 
 
 EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
@@ -105,6 +112,10 @@ def _repeat_fire_push_until_resolved(alert_id: int, stall_label: str, alert_body
 
 
 class RegisterTokenView(APIView):
+	authentication_classes = []
+	permission_classes = [permissions.AllowAny]
+	parser_classes = [JSONParser, FormParser]
+
 	def post(self, request):
 		token = request.data.get('token')
 		channel_id = request.data.get('channel_id') or request.data.get('tone') or DEFAULT_ALERT_CHANNEL
@@ -153,25 +164,45 @@ class AlertListView(APIView):
 
 
 class FireAlertView(APIView):
+	authentication_classes = []
+	permission_classes = [permissions.AllowAny]
+	parser_classes = [JSONParser, FormParser]
+
 	def post(self, request):
-		status_value = request.data.get('status')
-		stall_value = request.data.get('stall', FireAlert.STALL_1)
-		message = request.data.get('message', '')
+		serializer = FireAlertIngestSerializer(data=request.data)
+		if not serializer.is_valid():
+			return Response(
+				{
+					'status': 'error',
+					'message': 'Invalid fire alert payload',
+					'errors': serializer.errors,
+				},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+
+		validated = serializer.validated_data
+		incoming_status = validated['status']
+		status_value = (
+			FireAlert.STATUS_FIRE if incoming_status in {'ACTIVE', 'FIRE'} else FireAlert.STATUS_NORMAL
+		)
+		location = validated['location']
+		message = validated.get('message', '').strip()
+
+		stall_value = FireAlert.STALL_1
+		if location == 'STALL 2':
+			stall_value = FireAlert.STALL_2
+		elif location in {'BOTH', 'BOTH STALLS'}:
+			stall_value = FireAlert.STALL_BOTH
+
 		had_active_fire_before = FireAlert.objects.filter(
 			status=FireAlert.STATUS_FIRE,
 			resolved=False,
 		).exists()
 
-		if status_value not in [FireAlert.STATUS_FIRE, FireAlert.STATUS_NORMAL]:
-			return Response(
-				{'message': "Invalid status. Use 'fire' or 'normal'."},
-				status=status.HTTP_400_BAD_REQUEST,
-			)
-
-		if stall_value not in [FireAlert.STALL_1, FireAlert.STALL_2, FireAlert.STALL_BOTH]:
-			return Response(
-				{'message': "Invalid stall. Use 'stall_1', 'stall_2', or 'both'."},
-				status=status.HTTP_400_BAD_REQUEST,
+		if status_value == FireAlert.STATUS_NORMAL:
+			FireAlert.objects.filter(status=FireAlert.STATUS_FIRE, resolved=False).update(
+				resolved=True,
+				resolved_at=timezone.now(),
 			)
 
 		new_alert = FireAlert.objects.create(status=status_value, stall=stall_value, message=message)
@@ -195,10 +226,23 @@ class FireAlertView(APIView):
 					daemon=True,
 				).start()
 
-		return Response({'message': 'Alert saved'}, status=status.HTTP_201_CREATED)
+		return Response(
+			{
+				'status': 'success',
+				'message': 'Fire alert accepted',
+				'alert_id': new_alert.id,
+				'fire_status': status_value,
+				'stall': stall_value,
+			},
+			status=status.HTTP_201_CREATED,
+		)
 
 
 class ResolveAlertView(APIView):
+	authentication_classes = []
+	permission_classes = [permissions.AllowAny]
+	parser_classes = [JSONParser, FormParser]
+
 	def post(self, request, id):
 		get_object_or_404(FireAlert, id=id)
 		resolved_at = timezone.now()
@@ -211,20 +255,45 @@ class ResolveAlertView(APIView):
 
 
 class SensorStatusView(APIView):
-	def post(self, request):
-		online = request.data.get('online')
+	authentication_classes = []
+	permission_classes = [permissions.AllowAny]
+	parser_classes = [JSONParser, FormParser]
 
-		if online is not True:
-			return Response({'message': 'online=true is required'}, status=status.HTTP_400_BAD_REQUEST)
+	def post(self, request):
+		serializer = SensorStatusIngestSerializer(data=request.data)
+		if not serializer.is_valid():
+			return Response(
+				{
+					'status': 'error',
+					'message': 'Invalid sensor status payload',
+					'errors': serializer.errors,
+				},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+
+		stall1 = serializer.validated_data['stall1']
+		stall2 = serializer.validated_data['stall2']
 
 		sensor_status, _ = SensorStatus.objects.get_or_create(id=1)
 		sensor_status.is_online = True
+		sensor_status.stall1 = stall1
+		sensor_status.stall2 = stall2
 		sensor_status.save()
 
-		return Response({'message': 'Status updated'}, status=status.HTTP_200_OK)
+		return Response(
+			{
+				'status': 'success',
+				'message': 'Sensor status accepted',
+				'data': {
+					'stall1': sensor_status.stall1,
+					'stall2': sensor_status.stall2,
+					'is_online': sensor_status.is_online,
+					'last_seen': sensor_status.last_seen,
+				},
+			},
+			status=status.HTTP_200_OK,
+		)
 
-
-class GetSensorStatusView(APIView):
 	def get(self, request):
 		sensor_status, _ = SensorStatus.objects.get_or_create(id=1)
 
@@ -234,6 +303,10 @@ class GetSensorStatusView(APIView):
 
 		return Response(
 			{
+				'status': 'success',
+				'message': 'Sensor status fetched',
+				'stall1': sensor_status.stall1,
+				'stall2': sensor_status.stall2,
 				'is_online': sensor_status.is_online,
 				'last_seen': sensor_status.last_seen,
 			},
