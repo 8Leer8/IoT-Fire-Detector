@@ -14,6 +14,8 @@ interface StallMonitorProps {
   status: 'fire' | 'normal';
   stall: 'stall_1' | 'stall_2' | 'both' | null;
   resolved: boolean;
+  isOnline: boolean;
+  lastSeen: string;
 }
 
 const getColors = (scheme: ColorSchemeName) => {
@@ -45,14 +47,17 @@ const getColors = (scheme: ColorSchemeName) => {
 interface StallCardProps {
   label: 'Stall 1' | 'Stall 2';
   active: boolean;
+  isOnline: boolean;
+  lastSeenLabel: string;
   colors: ReturnType<typeof getColors>;
 }
 
-const StallCard = ({ label, active, colors }: StallCardProps) => {
+const StallCard = ({ label, active, isOnline, lastSeenLabel, colors }: StallCardProps) => {
   const iconOpacity = useRef(new Animated.Value(1)).current;
+  const shimmerProgress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (active) {
+    if (active && isOnline) {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(iconOpacity, {
@@ -75,53 +80,135 @@ const StallCard = ({ label, active, colors }: StallCardProps) => {
     return undefined;
   }, [active, iconOpacity]);
 
-  const styles = createStallCardStyles(colors, active);
+  useEffect(() => {
+    if (!isOnline) {
+      const loop = Animated.loop(
+        Animated.timing(shimmerProgress, {
+          toValue: 1,
+          duration: 1300,
+          useNativeDriver: true,
+        })
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+
+    shimmerProgress.setValue(0);
+    return undefined;
+  }, [isOnline, shimmerProgress]);
+
+  const styles = createStallCardStyles(colors);
   const animatedIconStyle = [styles.iconWrap, { opacity: iconOpacity }];
   const safeIconStyle = [styles.iconWrap, styles.safeIconWrap];
+  const statusColor = active ? colors.accentFire : isOnline ? colors.accentSafe : colors.accentOffline;
+  const statusLabel = active ? 'Fire Detected!' : isOnline ? 'Safe' : 'Waiting for connection';
+  const iconName = !isOnline ? 'wifi-off' : active ? 'fire' : 'shield-check';
+  const iconColor = active ? '#FF453A' : isOnline ? colors.accentSafe : colors.accentOffline;
+  const shimmerTranslate = shimmerProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-50, 140],
+  });
 
   return (
     <View style={styles.cardWrap}>
-      <View style={styles.roofCap} />
-      <View style={styles.houseBody}>
-        <View style={styles.accentBar} />
+      <View style={[styles.roofCap, { borderBottomColor: statusColor }]} />
+      <View style={[styles.houseBody, { borderColor: statusColor }]}>
+        <View style={[styles.accentBar, { backgroundColor: statusColor }]} />
         <View style={styles.contentArea}>
           <Text style={styles.label}>{label}</Text>
-          {active ? (
+          {active && isOnline ? (
             <Animated.View style={animatedIconStyle}>
               <MaterialCommunityIcons
-                name={'fire' as never}
+                name={(iconName as never)}
                 size={34}
-                color={'#FF453A'}
+                color={iconColor}
               />
             </Animated.View>
           ) : (
             <View style={safeIconStyle}>
               <MaterialCommunityIcons
-                name={'shield-check' as never}
+                name={(iconName as never)}
                 size={34}
-                color={colors.accentSafe}
+                color={iconColor}
               />
             </View>
           )}
-          <Text style={styles.statusText}>{active ? 'Fire Detected!' : 'Safe'}</Text>
+          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          {lastSeenLabel ? (
+            <Text style={styles.lastSeenText}>{lastSeenLabel}</Text>
+          ) : null}
+          {!isOnline ? (
+            <View style={styles.skeletonWrap}>
+              <View style={styles.skeletonBar}>
+                <Animated.View
+                  style={[
+                    styles.skeletonHighlight,
+                    { transform: [{ translateX: shimmerTranslate }] },
+                  ]}
+                />
+              </View>
+              <View style={[styles.skeletonBar, styles.skeletonBarShort]}>
+                <Animated.View
+                  style={[
+                    styles.skeletonHighlight,
+                    { transform: [{ translateX: shimmerTranslate }] },
+                  ]}
+                />
+              </View>
+            </View>
+          ) : null}
         </View>
       </View>
     </View>
   );
 };
 
-const StallMonitor = ({ status, stall, resolved }: StallMonitorProps) => {
+const StallMonitor = ({ status, stall, resolved, isOnline, lastSeen }: StallMonitorProps) => {
   const { colorScheme: scheme } = useAppTheme();
   const colors = getColors(scheme);
 
-  const isFireActive = status === 'fire' && !resolved;
+  const isFireActive = isOnline && status === 'fire' && !resolved;
   const stall1Active = isFireActive && (stall === 'stall_1' || stall === 'both');
   const stall2Active = isFireActive && (stall === 'stall_2' || stall === 'both');
 
+  const formatLastSeen = (value: string) => {
+    if (!value) {
+      return '';
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  const lastSeenLabel = formatLastSeen(lastSeen);
+  const lastSeenText = lastSeenLabel ? `${isOnline ? 'Updated' : 'Last seen'}: ${lastSeenLabel}` : '';
+
   return (
     <View style={styles.container}>
-      <StallCard label="Stall 1" active={stall1Active} colors={colors} />
-      <StallCard label="Stall 2" active={stall2Active} colors={colors} />
+      <StallCard
+        label="Stall 1"
+        active={stall1Active}
+        isOnline={isOnline}
+        lastSeenLabel={lastSeenText}
+        colors={colors}
+      />
+      <StallCard
+        label="Stall 2"
+        active={stall2Active}
+        isOnline={isOnline}
+        lastSeenLabel={lastSeenText}
+        colors={colors}
+      />
     </View>
   );
 };
@@ -133,10 +220,7 @@ const styles = StyleSheet.create({
   },
 });
 
-const createStallCardStyles = (
-  colors: ReturnType<typeof getColors>,
-  active: boolean
-) =>
+const createStallCardStyles = (colors: ReturnType<typeof getColors>) =>
   StyleSheet.create({
     cardWrap: {
       flex: 1,
@@ -150,14 +234,14 @@ const createStallCardStyles = (
       borderBottomWidth: 18,
       borderLeftColor: 'transparent',
       borderRightColor: 'transparent',
-      borderBottomColor: active ? colors.accentFire : colors.accentSafe,
+      borderBottomColor: colors.accentSafe,
       marginBottom: -2,
     },
     houseBody: {
       minHeight: 170,
       borderRadius: 16,
       borderWidth: 1,
-      borderColor: active ? colors.accentFire : colors.accentSafe,
+      borderColor: colors.accentSafe,
       backgroundColor: colors.card,
       shadowColor: '#000000',
       shadowOffset: { width: 0, height: 6 },
@@ -168,7 +252,7 @@ const createStallCardStyles = (
     },
     accentBar: {
       height: 8,
-      backgroundColor: active ? colors.accentFire : colors.accentSafe,
+      backgroundColor: colors.accentSafe,
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
     },
@@ -194,7 +278,37 @@ const createStallCardStyles = (
     statusText: {
       fontSize: 13,
       fontWeight: '700',
-      color: active ? colors.accentFire : colors.accentSafe,
+      color: colors.accentSafe,
+    },
+    lastSeenText: {
+      marginTop: 4,
+      fontSize: 11,
+      fontWeight: '500',
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    skeletonWrap: {
+      marginTop: 8,
+      width: '100%',
+      gap: 8,
+      alignItems: 'center',
+    },
+    skeletonBar: {
+      width: 120,
+      height: 10,
+      borderRadius: 6,
+      backgroundColor: colors.border,
+      overflow: 'hidden',
+    },
+    skeletonBarShort: {
+      width: 90,
+    },
+    skeletonHighlight: {
+      width: 50,
+      height: 10,
+      borderRadius: 6,
+      backgroundColor: colors.card,
+      opacity: 0.35,
     },
   });
 

@@ -197,7 +197,7 @@ const DashboardScreen = () => {
 				<View style={styles.topRow}>
 					<View style={styles.titleRow}>
 						<Ionicons name="flame" size={24} color={colors.accentFire} />
-						<Text style={styles.title}>Fire Detector</Text>
+						<Text style={styles.title}>Senseflame</Text>
 					</View>
 					<Link href="/settings" asChild>
 						<Pressable style={styles.settingsButton}>
@@ -212,7 +212,13 @@ const DashboardScreen = () => {
 				</View>
 
 				<View style={styles.cardGap}>
-					<StallMonitor status={latestStatus.status} stall={latestStatus.stall} resolved={latestStatus.resolved} />
+					<StallMonitor
+						status={latestStatus.status}
+						stall={latestStatus.stall}
+						resolved={latestStatus.resolved}
+						isOnline={sensorStatus.is_online}
+						lastSeen={sensorStatus.last_seen}
+					/>
 				</View>
 
 				{latestStatus.status === 'fire' && !latestStatus.resolved ? (
@@ -248,7 +254,16 @@ const DashboardScreen = () => {
 						)}
 						ListEmptyComponent={
 							<View style={styles.emptyWrap}>
-								<Text style={styles.emptyText}>No alerts recorded yet</Text>
+								{sensorStatus.is_online ? (
+									<Text style={styles.emptyText}>No alerts recorded yet</Text>
+								) : (
+									<>
+										<ActivityIndicator size="small" color={colors.textSecondary} />
+										<Text style={[styles.emptyText, styles.emptyTextWithSpinner]}>
+											Waiting for connection...
+										</Text>
+									</>
+								)}
 							</View>
 						}
 					/>
@@ -372,6 +387,9 @@ const createStyles = (colors: ReturnType<typeof getColors>) =>
 			fontSize: 14,
 			fontWeight: '500',
 			color: colors.textSecondary,
+		},
+		emptyTextWithSpinner: {
+			marginTop: 8,
 		},
 	});
 
