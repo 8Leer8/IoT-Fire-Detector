@@ -2,19 +2,16 @@ import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { AudioPlayer, createAudioPlayer } from 'expo-audio';
 import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { API_URL_STORAGE_KEY, registerToken } from '@/api/fireApi';
+import { registerToken } from '@/api/fireApi';
 import { ThemePreference, useAppTheme } from '@/hooks/useAppTheme';
 import { SOUND_MAP } from '@/hooks/useAlertSound';
 import { RINGTONES, useRingtone } from '@/hooks/useRingtone';
@@ -82,14 +79,9 @@ const SettingsScreen = () => {
   const previewRef = useRef<AudioPlayer | null>(null);
   const previewListenerRef = useRef<{ remove: () => void } | null>(null);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
-  const [apiUrlInput, setApiUrlInput] = useState('');
-  const [activeApiUrl, setActiveApiUrl] = useState('');
-  const [apiModalVisible, setApiModalVisible] = useState(false);
-  const [apiUrlDraft, setApiUrlDraft] = useState('');
-  const [apiUrlError, setApiUrlError] = useState('');
   const defaultApiUrl =
-    (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
     process.env.EXPO_PUBLIC_API_URL ??
+    (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
     '';
 
   const themeOptions: ThemeOption[] = [
@@ -119,26 +111,6 @@ const SettingsScreen = () => {
     previewRef.current = null;
     setPreviewingId(null);
   };
-
-  useEffect(() => {
-    const loadApiUrl = async () => {
-      try {
-        const storedUrl = await AsyncStorage.getItem(API_URL_STORAGE_KEY);
-        if (storedUrl && storedUrl.trim()) {
-          setApiUrlInput(storedUrl);
-          setActiveApiUrl(storedUrl);
-          return;
-        }
-        setApiUrlInput('');
-        setActiveApiUrl(defaultApiUrl);
-      } catch {
-        setApiUrlInput('');
-        setActiveApiUrl(defaultApiUrl);
-      }
-    };
-
-    void loadApiUrl();
-  }, [defaultApiUrl]);
 
   useEffect(() => {
     return () => {
@@ -192,26 +164,6 @@ const SettingsScreen = () => {
     RINGTONES[0]?.label ??
     'None';
 
-  const saveApiUrl = async () => {
-    const trimmed = apiUrlDraft.trim();
-    if (!trimmed) {
-      setApiUrlError('API is required');
-      return;
-    }
-
-    await AsyncStorage.setItem(API_URL_STORAGE_KEY, trimmed);
-    setApiUrlInput(trimmed);
-    setActiveApiUrl(trimmed);
-    setApiUrlError('');
-    setApiModalVisible(false);
-  };
-
-  const openApiModal = () => {
-    setApiUrlDraft(apiUrlInput || activeApiUrl || '');
-    setApiUrlError('');
-    setApiModalVisible(true);
-  };
-
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -259,67 +211,13 @@ const SettingsScreen = () => {
         </View>
 
         <View style={styles.sectionWrap}>
-          <Text style={styles.title}>API Configuration</Text>
-          <Text style={styles.subtitle}>Override backend URL for this device.</Text>
-
+          <Text style={styles.title}>API Endpoint</Text>
+          <Text style={styles.subtitle}>Configured from the app environment.</Text>
           <View style={styles.apiCard}>
-            <View style={styles.apiHeaderRow}>
-              <Text style={styles.apiHeaderLabel}>API</Text>
-              <Pressable style={styles.apiEditButton} onPress={openApiModal}>
-                <MaterialCommunityIcons name='pencil-outline' size={18} color={colors.textPrimary} />
-              </Pressable>
-            </View>
-
-            <Text style={styles.activeApiText}>Active URL: {activeApiUrl || defaultApiUrl || 'Not set'}</Text>
+            <Text style={styles.activeApiText}>Active URL: {defaultApiUrl || 'Not set'}</Text>
           </View>
         </View>
       </ScrollView>
-
-      <Modal
-        visible={apiModalVisible}
-        transparent
-        animationType='fade'
-        onRequestClose={() => {
-          setApiUrlError('');
-          setApiModalVisible(false);
-        }}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>API URL</Text>
-            <TextInput
-              value={apiUrlDraft}
-              onChangeText={(value) => {
-                setApiUrlDraft(value);
-                if (apiUrlError) {
-                  setApiUrlError('');
-                }
-              }}
-              placeholder={defaultApiUrl || 'http://192.168.x.x:8000'}
-              placeholderTextColor={colors.textSecondary}
-              style={styles.apiInput}
-              autoCapitalize='none'
-              autoCorrect={false}
-              autoFocus
-            />
-            {apiUrlError ? <Text style={styles.apiErrorText}>{apiUrlError}</Text> : null}
-            <View style={styles.modalButtonRow}>
-              <Pressable
-                style={styles.modalCancelButton}
-                onPress={() => {
-                  setApiUrlError('');
-                  setApiModalVisible(false);
-                }}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.apiSaveButton} onPress={() => void saveApiUrl()}>
-                <Text style={styles.apiSaveButtonText}>Save</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -435,96 +333,10 @@ const createStyles = (colors: ReturnType<typeof getColors>) =>
       padding: 12,
       gap: 10,
     },
-    apiInput: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 14,
-      color: colors.textPrimary,
-      backgroundColor: colors.background,
-    },
-    apiHeaderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    apiHeaderLabel: {
-      fontSize: 16,
-      fontWeight: '700',
-      color: colors.textPrimary,
-    },
-    apiEditButton: {
-      width: 34,
-      height: 34,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.background,
-    },
-    apiSaveButton: {
-      flex: 1,
-      paddingVertical: 10,
-      borderRadius: 10,
-      backgroundColor: colors.accentFire,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    apiSaveButtonText: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: '#FFFFFF',
-    },
     activeApiText: {
       fontSize: 12,
       fontWeight: '500',
       color: colors.textSecondary,
-    },
-    apiErrorText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: colors.accentFire,
-    },
-    modalBackdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.45)',
-      justifyContent: 'center',
-      paddingHorizontal: 16,
-    },
-    modalCard: {
-      borderRadius: 14,
-      padding: 14,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: 12,
-    },
-    modalTitle: {
-      fontSize: 18,
-      fontWeight: '700',
-      color: colors.textPrimary,
-    },
-    modalButtonRow: {
-      flexDirection: 'row',
-      gap: 10,
-    },
-    modalCancelButton: {
-      flex: 1,
-      paddingVertical: 10,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.card,
-    },
-    modalCancelText: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: colors.textPrimary,
     },
   });
 

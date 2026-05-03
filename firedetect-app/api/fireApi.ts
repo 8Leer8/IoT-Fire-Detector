@@ -1,5 +1,4 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
 export type FireStatus = 'fire' | 'normal';
@@ -25,16 +24,13 @@ export interface LatestStatusResponse {
 	message?: string;
 }
 
-export const API_URL_STORAGE_KEY = 'apiUrl';
-
 const getBaseUrl = async (): Promise<string> => {
-	const storedApiUrl = await AsyncStorage.getItem(API_URL_STORAGE_KEY);
 	const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
 	const appConfigApiUrl = (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? undefined;
-	const baseUrl = (storedApiUrl || envApiUrl || appConfigApiUrl || '').trim();
+	const baseUrl = (envApiUrl || appConfigApiUrl || '').trim();
 
 	if (!baseUrl) {
-		throw new Error('No API URL configured. Set EXPO_PUBLIC_API_URL or save API URL in settings.');
+		throw new Error('No API URL configured. Set EXPO_PUBLIC_API_URL in your environment.');
 	}
 
 	return baseUrl.replace(/\/$/, '');
