@@ -243,6 +243,9 @@ class ResolveAlertView(APIView):
 	permission_classes = [permissions.AllowAny]
 	parser_classes = [JSONParser, FormParser]
 
+	def get(self, request, id):
+		return self.post(request, id)
+
 	def post(self, request, id):
 		get_object_or_404(FireAlert, id=id)
 		resolved_at = timezone.now()
