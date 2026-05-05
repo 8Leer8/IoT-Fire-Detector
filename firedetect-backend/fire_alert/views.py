@@ -219,13 +219,13 @@ class FireAlertView(APIView):
 		status_value = (
 			FireAlert.STATUS_FIRE if incoming_status in {'ACTIVE', 'FIRE'} else FireAlert.STATUS_NORMAL
 		)
-		location = validated['location']
+		stall_input = validated.get('stall') or 'stall_1'
 		message = validated.get('message', '').strip()
 
 		stall_value = FireAlert.STALL_1
-		if location == 'STALL 2':
+		if stall_input == 'stall_2':
 			stall_value = FireAlert.STALL_2
-		elif location in {'BOTH', 'BOTH STALLS'}:
+		elif stall_input == 'both':
 			stall_value = FireAlert.STALL_BOTH
 
 		if stall_value == FireAlert.STALL_1:

@@ -57,28 +57,27 @@ StallState stall[2] = {
 const unsigned long ALARM_CLEAR_DURATION = 10000;
 
 // ── Timers (main loop) ────────────────────────────────────────────────────────
-unsigned long lastLcdUpdateMs    = 0;
-unsigned long lastWifiCheckMs    = 0;
-const unsigned long LCD_INTERVAL_MS  = 50;   // faster LCD = smoother countdown
-const unsigned long WIFI_CHECK_MS    = 10000;
+unsigned long lastLcdUpdateMs = 0;
+unsigned long lastWifiCheckMs = 0;
+const unsigned long LCD_INTERVAL_MS = 50;
+const unsigned long WIFI_CHECK_MS   = 10000;
 
 // ── HTTP task timing ──────────────────────────────────────────────────────────
-const unsigned long HEARTBEAT_INTERVAL_MS  = 10000;
-const unsigned long STATUS_INTERVAL_MS     = 30000;
-const unsigned long RESOLVE_CHECK_INTERVAL = 3000;
-const int           HTTP_TIMEOUT_MS        = 5000;
-const int           HTTP_RETRY_COUNT       = 2;
+const unsigned long HEARTBEAT_INTERVAL_MS         = 10000;
+const unsigned long RESOLVE_CHECK_INTERVAL        = 3000;
+const int           HTTP_TIMEOUT_MS               = 5000;
+const int           HTTP_RETRY_COUNT              = 2;
 const int           HTTP_FAIL_RECONNECT_THRESHOLD = 3;
 
-// ── FreeRTOS queue (main → http task) ────────────────────────────────────────
+// ── FreeRTOS ──────────────────────────────────────────────────────────────────
 struct HttpJob {
-  char  url[128];
-  char  body[256];
-  bool  isGet;
+  char url[128];
+  char body[256];
+  bool isGet;
 };
 
-QueueHandle_t httpQueue;
-SemaphoreHandle_t stallMutex;   // protect shared StallState reads/writes
+QueueHandle_t     httpQueue;
+SemaphoreHandle_t stallMutex;
 
 WiFiClientSecure secureClient;
 int consecutiveHttpFails = 0;
@@ -94,7 +93,7 @@ void setBuzzer(int freq) {
   }
 }
 
-// ── Stall helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 String stallFromFlags(bool s1, bool s2) {
   if (s1 && s2) return "both";
   if (s1)       return "stall_1";
@@ -102,12 +101,28 @@ String stallFromFlags(bool s1, bool s2) {
   return "stall_1";
 }
 
-void enqueuePost(const String& url, const String& body) {
+bool enqueuePost(const String& url, const String& body) {
   HttpJob job;
   url.toCharArray(job.url, sizeof(job.url));
   body.toCharArray(job.body, sizeof(job.body));
   job.isGet = false;
-  xQueueSend(httpQueue, &job, 0);  // non-blocking — drop if full
+  if (xQueueSend(httpQueue, &job, 0) != pdTRUE) {
+    Serial.println("[QUEUE] Fire POST dropped (queue full)");
+    return false;
+  }
+  return true;
+}
+
+bool enqueueFirePost(const String& url, const String& body) {
+  HttpJob job;
+  url.toCharArray(job.url, sizeof(job.url));
+  body.toCharArray(job.body, sizeof(job.body));
+  job.isGet = false;
+  if (xQueueSend(httpQueue, &job, pdMS_TO_TICKS(200)) != pdTRUE) {
+    Serial.println("[QUEUE] Fire POST dropped after wait");
+    return false;
+  }
+  return true;
 }
 
 void enqueueGet(const String& url) {
@@ -115,10 +130,12 @@ void enqueueGet(const String& url) {
   url.toCharArray(job.url, sizeof(job.url));
   job.body[0] = '\0';
   job.isGet = true;
-  xQueueSend(httpQueue, &job, 0);
+  if (xQueueSend(httpQueue, &job, 0) != pdTRUE) {
+    Serial.println("[QUEUE] GET dropped (queue full)");
+  }
 }
 
-// ── HTTP helpers (run on Core 0 only) ────────────────────────────────────────
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
 void handleHttpFail() {
   consecutiveHttpFails++;
   Serial.printf("[NET] Consecutive HTTP fails: %d\n", consecutiveHttpFails);
@@ -175,7 +192,6 @@ bool doPost(const char* url, const char* body) {
 // ── HTTP Task (Core 0) ────────────────────────────────────────────────────────
 void httpTask(void* pvParams) {
   unsigned long lastHeartbeat    = 0;
-  unsigned long lastStatusSend   = 0;
   unsigned long lastResolveCheck = 0;
 
   for (;;) {
@@ -189,7 +205,7 @@ void httpTask(void* pvParams) {
       }
     }
 
-    // Drain any queued jobs first (fire alerts, sensor status)
+    // Drain queued jobs (fire alerts, sensor status)
     HttpJob job;
     while (xQueueReceive(httpQueue, &job, 0) == pdTRUE) {
       if (WiFi.status() != WL_CONNECTED) break;
@@ -220,7 +236,7 @@ void httpTask(void* pvParams) {
 
     now = millis();
 
-    // Heartbeat
+    // Heartbeat — sensor status
     if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
       lastHeartbeat = now;
       xSemaphoreTake(stallMutex, portMAX_DELAY);
@@ -236,7 +252,7 @@ void httpTask(void* pvParams) {
       doPost((String(BASE_URL) + SENSOR_STATUS_PATH).c_str(), payload);
     }
 
-    // Resolve poll (only while unresolved alarm exists)
+    // Resolve poll — only while an unresolved alarm exists
     xSemaphoreTake(stallMutex, portMAX_DELAY);
     bool s1unresolved = stall[0].alarmActive && !stall[0].resolvedByApp;
     bool s2unresolved = stall[1].alarmActive && !stall[1].resolvedByApp;
@@ -248,7 +264,6 @@ void httpTask(void* pvParams) {
       String response = doGet((String(BASE_URL) + CHECK_RESOLVED_PATH).c_str());
       if (response.length() > 0) {
         Serial.println("[RESOLVE CHECK] Response: " + response);
-
         bool s1res = response.indexOf("\"stall1_resolved\":true") >= 0;
         bool s2res = response.indexOf("\"stall2_resolved\":true") >= 0;
 
@@ -267,7 +282,7 @@ void httpTask(void* pvParams) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50));  // yield — don't starve Core 0
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
@@ -321,19 +336,17 @@ void setup() {
   delay(1500);
   lcd.clear();
 
-  // FreeRTOS primitives
-  httpQueue  = xQueueCreate(10, sizeof(HttpJob));
+  httpQueue  = xQueueCreate(20, sizeof(HttpJob));
   stallMutex = xSemaphoreCreateMutex();
 
-  // HTTP task on Core 0, main loop stays on Core 1
   xTaskCreatePinnedToCore(
-    httpTask,    // function
-    "httpTask",  // name
-    8192,        // stack bytes
-    NULL,        // params
-    1,           // priority
-    NULL,        // handle
-    0            // Core 0
+    httpTask,
+    "httpTask",
+    8192,
+    NULL,
+    1,
+    NULL,
+    0
   );
 }
 
@@ -356,96 +369,102 @@ void loop() {
     }
   }
 
-  // ── Fire detection (hysteresis) ────────────────────────────────────────────
+  // ── Take mutex ONCE for the entire state machine ───────────────────────────
   xSemaphoreTake(stallMutex, portMAX_DELAY);
 
+  // Fire detection with hysteresis
   int avgs[2] = { avg1, avg2 };
   for (int s = 0; s < 2; s++) {
     if (avgs[s] < THRESHOLD_ON)       stall[s].fireDetected = true;
     else if (avgs[s] > THRESHOLD_OFF) stall[s].fireDetected = false;
   }
 
-  // ── Alarm state machine ────────────────────────────────────────────────────
+  // Collect actions — never enqueue inside the mutex
+  bool shouldPostFire   = false;
+  bool shouldPostNormal = false;
+  int fireTriggerStall  = -1;
+  char firePayload[200]   = {};
+  char normalPayload[200] = {};
+
   for (int s = 0; s < 2; s++) {
     if (stall[s].fireDetected) {
       if (!stall[s].alarmActive) {
         stall[s].alarmActive   = true;
         stall[s].resolvedByApp = false;
+        stall[s].lastFireSent  = false;
         Serial.printf("[STATE] Stall %d alarm activated\n", s + 1);
+        fireTriggerStall = s;
 
-        // Immediately queue a fire alert
         bool s1f = stall[0].fireDetected;
         bool s2f = stall[1].fireDetected;
-        xSemaphoreGive(stallMutex);
-
-        char payload[200];
-        snprintf(payload, sizeof(payload),
+        snprintf(firePayload, sizeof(firePayload),
                  "{\"status\":\"fire\",\"stall\":\"%s\",\"message\":\"Fire detected by ESP32\"}",
                  stallFromFlags(s1f, s2f).c_str());
-        enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(payload));
-
-        xSemaphoreTake(stallMutex, portMAX_DELAY);
-        stall[s].lastFireSent = true;
+        shouldPostFire = true;
       }
     } else {
       if (stall[s].alarmActive && stall[s].resolvedByApp) {
         if (now - stall[s].fireDisappearedTime >= ALARM_CLEAR_DURATION) {
           stall[s].alarmActive   = false;
           stall[s].resolvedByApp = false;
+          stall[s].lastFireSent  = false;
           Serial.printf("[STATE] Stall %d fully cleared\n", s + 1);
-
-          bool allCleared = !stall[0].alarmActive && !stall[1].alarmActive;
-          bool s1f = stall[0].fireDetected;
-          bool s2f = stall[1].fireDetected;
-          xSemaphoreGive(stallMutex);
-
-          if (allCleared) {
-            // Queue "normal" alert only when both stalls are cleared
-            char payload[200];
-            snprintf(payload, sizeof(payload),
-                     "{\"status\":\"normal\",\"stall\":\"%s\",\"message\":\"No fire detected\"}",
-                     stallFromFlags(s1f, s2f).c_str());
-            enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(payload));
-          }
-
-          xSemaphoreTake(stallMutex, portMAX_DELAY);
-          stall[s].lastFireSent = false;
-          if (allCleared) {
-            lcd.clear();
-          }
         }
       }
     }
   }
 
-  // Snapshot for LCD/buzzer (inside mutex)
-  bool s1fire      = stall[0].fireDetected;
-  bool s2fire      = stall[1].fireDetected;
-  bool s1alarm     = stall[0].alarmActive;
-  bool s2alarm     = stall[1].alarmActive;
-  bool s1res       = stall[0].resolvedByApp;
-  bool s2res       = stall[1].resolvedByApp;
+  // Send "normal" only when both stalls are fully cleared
+  bool allCleared = !stall[0].alarmActive && !stall[1].alarmActive;
+  bool anyWasFire = stall[0].lastFireSent || stall[1].lastFireSent;
+  if (allCleared && !anyWasFire && !shouldPostFire) {
+    // Both just cleared this tick — send normal
+    snprintf(normalPayload, sizeof(normalPayload),
+             "{\"status\":\"normal\",\"stall\":\"stall_1\",\"message\":\"No fire detected\"}");
+    shouldPostNormal = true;
+  }
+
+  // Snapshot for LCD/buzzer
+  bool s1fire  = stall[0].fireDetected;
+  bool s2fire  = stall[1].fireDetected;
+  bool s1alarm = stall[0].alarmActive;
+  bool s2alarm = stall[1].alarmActive;
+  bool s1res   = stall[0].resolvedByApp;
+  bool s2res   = stall[1].resolvedByApp;
   unsigned long fd0 = stall[0].fireDisappearedTime;
   unsigned long fd1 = stall[1].fireDisappearedTime;
 
+  // ── Release mutex ONCE ─────────────────────────────────────────────────────
   xSemaphoreGive(stallMutex);
+
+  // ── Enqueue HTTP jobs OUTSIDE mutex ───────────────────────────────────────
+  if (shouldPostFire) {
+    bool queued = enqueueFirePost(String(BASE_URL) + FIRE_ALERT_PATH, String(firePayload));
+    if (queued && fireTriggerStall >= 0) {
+      xSemaphoreTake(stallMutex, portMAX_DELAY);
+      stall[fireTriggerStall].lastFireSent = true;
+      xSemaphoreGive(stallMutex);
+    }
+  }
+  if (shouldPostNormal) {
+    enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(normalPayload));
+  }
 
   bool s1unresolved  = s1alarm && !s1res;
   bool s2unresolved  = s2alarm && !s2res;
   bool anyUnresolved = s1unresolved || s2unresolved;
   bool anyResolved   = (s1alarm && s1res) || (s2alarm && s2res);
 
-  // ── Buzzer (zero-blocked, updates every loop tick ~1ms) ───────────────────
+  // ── Buzzer ─────────────────────────────────────────────────────────────────
   if (anyUnresolved) {
     setBuzzer(1200);
   } else if (anyResolved) {
-    // Crisp beep pattern: 100ms on / 400ms off
     setBuzzer((now % 500 < 100) ? 800 : 0);
   } else {
     setBuzzer(0);
   }
 
-  // ── LCD (50ms refresh = smooth countdown, no flicker) ─────────────────────
+  // ── LCD ────────────────────────────────────────────────────────────────────
   if (now - lastLcdUpdateMs >= LCD_INTERVAL_MS) {
     lastLcdUpdateMs = now;
 
