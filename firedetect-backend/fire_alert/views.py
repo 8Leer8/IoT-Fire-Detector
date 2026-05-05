@@ -156,6 +156,31 @@ class LatestStatusView(APIView):
 			)
 
 
+class CheckResolvedView(APIView):
+	def get(self, request):
+		try:
+			latest_alert = FireAlert.objects.latest('triggered_at')
+		except FireAlert.DoesNotExist:
+			return Response(
+				{
+					'resolved': True,
+					'status': 'normal',
+					'triggered_at': None,
+				},
+				status=status.HTTP_200_OK,
+			)
+
+		is_fire_active = latest_alert.status == FireAlert.STATUS_FIRE and not latest_alert.resolved
+		return Response(
+			{
+				'resolved': not is_fire_active,
+				'status': latest_alert.status,
+				'triggered_at': latest_alert.triggered_at,
+			},
+			status=status.HTTP_200_OK,
+		)
+
+
 class AlertListView(APIView):
 	def get(self, request):
 		alerts = FireAlert.objects.order_by('-triggered_at')
