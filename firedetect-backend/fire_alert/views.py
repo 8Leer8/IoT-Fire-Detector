@@ -162,8 +162,11 @@ class LatestStatusView(APIView):
 
 class CheckResolvedView(APIView):
 	def get(self, request):
-		latest_fire_alert = FireAlert.objects.filter(status=FireAlert.STATUS_FIRE).order_by('-triggered_at').first()
-		if not latest_fire_alert:
+		latest_unresolved = FireAlert.objects.filter(
+			status=FireAlert.STATUS_FIRE,
+			resolved=False,
+		).order_by('-triggered_at').first()
+		if not latest_unresolved:
 			return Response(
 				{
 					'resolved': True,
@@ -173,12 +176,11 @@ class CheckResolvedView(APIView):
 				status=status.HTTP_200_OK,
 			)
 
-		is_fire_active = not latest_fire_alert.resolved
 		return Response(
 			{
-				'resolved': not is_fire_active,
-				'status': latest_fire_alert.status,
-				'triggered_at': latest_fire_alert.triggered_at,
+				'resolved': False,
+				'status': latest_unresolved.status,
+				'triggered_at': latest_unresolved.triggered_at,
 			},
 			status=status.HTTP_200_OK,
 		)
@@ -280,12 +282,15 @@ class ResolveAlertView(APIView):
 		return self.post(request, id)
 
 	def post(self, request, id):
-		get_object_or_404(FireAlert, id=id)
-		resolved_at = timezone.now()
-		FireAlert.objects.filter(status=FireAlert.STATUS_FIRE, resolved=False).update(
-			resolved=True,
-			resolved_at=resolved_at,
-		)
+		alert = get_object_or_404(FireAlert, id=id)
+		if alert.status != FireAlert.STATUS_FIRE:
+			return Response({'message': 'Alert is not active'}, status=status.HTTP_200_OK)
+		if alert.resolved:
+			return Response({'message': 'Alert already resolved'}, status=status.HTTP_200_OK)
+
+		alert.resolved = True
+		alert.resolved_at = timezone.now()
+		alert.save(update_fields=['resolved', 'resolved_at'])
 
 		return Response({'message': 'Alert resolved'}, status=status.HTTP_200_OK)
 

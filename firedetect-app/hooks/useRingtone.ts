@@ -11,16 +11,19 @@ export const RINGTONE_STORAGE_KEY = 'selectedRingtone';
 export const DEFAULT_NOTIFICATION_CHANNEL_ID = 'mixkit_urgent_simple_tone_loop_2976';
 
 const SOUND_FILENAMES = [
+  'Fire-Alarm.wav',
+  'Iphone-Fire-Alarm.wav',
   'mixkit_urgent_simple_tone_loop_2976.wav',
   'mixkit_access_allowed_tone_2869.wav',
   'mixkit_bell_notification_933.wav',
   'mixkit_clear_announce_tones_2861.wav',
   'mixkit_game_notification_wave_alarm_987.wav',
   'mixkit_happy_bells_notification_937.wav',
+  'Sunog (Brix).wav',
 ] as const;
 
 const toReadableLabel = (filename: string): string => {
-  const withoutExtension = filename.replace(/\.wav$/i, '');
+  const withoutExtension = filename.replace(/\.(wav|mp3)$/i, '');
   const withoutPrefix = withoutExtension.replace(/^mixkit[_-]?/, '');
   const withoutTrailingNumbers = withoutPrefix.replace(/[_-]?\d+$/, '');
 
@@ -32,7 +35,7 @@ const toReadableLabel = (filename: string): string => {
 };
 
 export const RINGTONES: Ringtone[] = SOUND_FILENAMES.map((filename) => {
-  const id = filename.replace(/\.wav$/i, '');
+  const id = filename.replace(/\.(wav|mp3)$/i, '');
   return {
     id,
     label: toReadableLabel(filename),

@@ -78,6 +78,20 @@ const DashboardScreen = () => {
 	const [isLoading, setIsLoading] = useState(true);
 	const [isResolving, setIsResolving] = useState(false);
 
+	const activeFireAlerts = alerts.filter((alert) => alert.status === 'fire' && !alert.resolved);
+	const hasActiveFire = activeFireAlerts.length > 0;
+	const activeStallSet = new Set(activeFireAlerts.map((alert) => alert.stall));
+	const activeStall: LatestStatusResponse['stall'] = activeStallSet.has('both') || (activeStallSet.has('stall_1') && activeStallSet.has('stall_2'))
+		? 'both'
+		: activeStallSet.has('stall_1')
+			? 'stall_1'
+			: activeStallSet.has('stall_2')
+				? 'stall_2'
+				: latestStatus.stall;
+	const alertsToResolve = activeStall === 'both'
+		? activeFireAlerts
+		: activeFireAlerts.filter((alert) => alert.stall === activeStall);
+
 	const pollLatestStatus = async () => {
 		try {
 			const latest: LatestStatusResponse = await getLatestStatus();
@@ -118,14 +132,19 @@ const DashboardScreen = () => {
 	};
 
 	const onResolveAlert = async (): Promise<void> => {
-		if (!latestStatus.id || isResolving) {
+		if (alertsToResolve.length === 0 || isResolving) {
 			return;
 		}
 
 		try {
 			setIsResolving(true);
 			await stopAlert();
-			await resolveAlert(latestStatus.id);
+			await Promise.all(
+				alertsToResolve
+					.map((alert) => alert.id)
+					.filter((id): id is number => typeof id === 'number')
+					.map((id) => resolveAlert(id))
+			);
 			await Promise.all([pollLatestStatus(), pollAlertHistory()]);
 		} catch {
 			return;
@@ -135,13 +154,13 @@ const DashboardScreen = () => {
 	};
 
 	useEffect(() => {
-		if (latestStatus.status === 'fire' && !latestStatus.resolved) {
+		if (hasActiveFire) {
 			void playAlertLoop();
 			return;
 		}
 
 		void stopAlert();
-	}, [latestStatus.status, latestStatus.resolved, playAlertLoop, stopAlert]);
+	}, [hasActiveFire, playAlertLoop, stopAlert]);
 
 	useEffect(() => {
 		return () => {
@@ -213,18 +232,26 @@ const DashboardScreen = () => {
 
 				<View style={styles.cardGap}>
 					<StallMonitor
-						status={latestStatus.status}
-						stall={latestStatus.stall}
-						resolved={latestStatus.resolved}
+						status={hasActiveFire ? 'fire' : 'normal'}
+						stall={activeStall}
+						resolved={!hasActiveFire}
 						isOnline={sensorStatus.is_online}
 						lastSeen={sensorStatus.last_seen}
 					/>
 				</View>
 
-				{latestStatus.status === 'fire' && !latestStatus.resolved ? (
+				{hasActiveFire ? (
 					<View style={styles.resolveWrap}>
 						<Pressable style={[styles.resolveButton, isResolving ? styles.resolveButtonDisabled : null]} onPress={onResolveAlert} disabled={isResolving}>
-							<Text style={styles.resolveButtonText}>{isResolving ? 'Resolving...' : 'Resolve'}</Text>
+							<Text style={styles.resolveButtonText}>
+								{isResolving
+									? 'Resolving...'
+									: activeStall === 'both'
+										? 'Resolve Both'
+										: activeStall === 'stall_1'
+											? 'Resolve Stall 1'
+											: 'Resolve Stall 2'}
+							</Text>
 						</Pressable>
 					</View>
 				) : null}
