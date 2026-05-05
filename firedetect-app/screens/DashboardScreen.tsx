@@ -79,8 +79,11 @@ const DashboardScreen = () => {
 	const [isResolving, setIsResolving] = useState(false);
 
 	const activeIncident = alerts.find((alert) => alert.is_active === true) ?? null;
-	const stall1Active = activeIncident?.stall_1_active ?? false;
-	const stall2Active = activeIncident?.stall_2_active ?? false;
+	const incidentStall = activeIncident?.stall ?? null;
+	const stall1Active =
+		activeIncident?.stall_1_active ?? (incidentStall === 'stall_1' || incidentStall === 'both');
+	const stall2Active =
+		activeIncident?.stall_2_active ?? (incidentStall === 'stall_2' || incidentStall === 'both');
 	const stall1Resolved = activeIncident?.stall_1_resolved ?? false;
 	const stall2Resolved = activeIncident?.stall_2_resolved ?? false;
 	const hasActiveFire = Boolean(

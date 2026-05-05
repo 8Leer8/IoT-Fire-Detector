@@ -348,7 +348,10 @@ class FireAlertResolveView(APIView):
 			active_incident.stall_2_resolved = True
 			fields_to_update.append('stall_2_resolved')
 
-		if active_incident.stall_1_resolved and active_incident.stall_2_resolved:
+		stall1_done = (not active_incident.stall_1_active) or active_incident.stall_1_resolved
+		stall2_done = (not active_incident.stall_2_active) or active_incident.stall_2_resolved
+
+		if stall1_done and stall2_done:
 			active_incident.resolved = True
 			active_incident.is_active = False
 			active_incident.resolved_at = timezone.now()
