@@ -138,7 +138,11 @@ class RegisterTokenView(APIView):
 class LatestStatusView(APIView):
 	def get(self, request):
 		try:
-			latest_alert = FireAlert.objects.latest('triggered_at')
+			latest_unresolved = FireAlert.objects.filter(
+				status=FireAlert.STATUS_FIRE,
+				resolved=False,
+			).order_by('-triggered_at').first()
+			latest_alert = latest_unresolved or FireAlert.objects.latest('triggered_at')
 			serializer = FireAlertSerializer(latest_alert)
 			return Response(serializer.data, status=status.HTTP_200_OK)
 		except FireAlert.DoesNotExist:
@@ -311,6 +315,25 @@ class SensorStatusView(APIView):
 		sensor_status.stall1 = stall1
 		sensor_status.stall2 = stall2
 		sensor_status.save()
+
+		if stall1 or stall2:
+			incoming_stall = FireAlert.STALL_1
+			if stall1 and stall2:
+				incoming_stall = FireAlert.STALL_BOTH
+			elif stall2:
+				incoming_stall = FireAlert.STALL_2
+
+			latest_unresolved = FireAlert.objects.filter(
+				status=FireAlert.STATUS_FIRE,
+				resolved=False,
+			).order_by('-triggered_at').first()
+
+			if not latest_unresolved or latest_unresolved.stall != incoming_stall:
+				FireAlert.objects.create(
+					status=FireAlert.STATUS_FIRE,
+					stall=incoming_stall,
+					message='Fire detected by ESP32',
+				)
 
 		return Response(
 			{
