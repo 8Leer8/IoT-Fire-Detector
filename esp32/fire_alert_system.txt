@@ -1,0 +1,367 @@
+/*
+  =========================================
+        IOT FIRE ALERT SYSTEM (ESP32)
+     FINAL - APP RESOLVES THE ALARM
+  =========================================
+
+  Fixes:
+  1) Reuse a global WiFiClientSecure to avoid -11 TLS handshake failures.
+  2) Rate limit HTTP sends (min 2s between any two sends).
+  3) Stable resolve countdown anchor.
+  4) Buzzer state tracking to reduce timer spam.
+*/
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+#define SENSOR_STALL_1 34
+#define SENSOR_STALL_2 35
+#define BUZZER_PIN     25
+
+const char* WIFI_SSID = "@admin_SANTOS";
+const char* WIFI_PASS = "graduation@2025";
+
+const char* BASE_URL            = "https://iot-fire-detector-production.up.railway.app";
+const char* FIRE_ALERT_PATH     = "/api/fire-alert/";
+const char* SENSOR_STATUS_PATH  = "/api/sensor-status/";
+const char* CHECK_RESOLVED_PATH = "/api/check-resolved/";
+
+// Thresholds
+const int THRESHOLD_ON  = 3300;
+const int THRESHOLD_OFF = 3900;
+
+// Non-blocking averaging
+const int SAMPLES = 15;
+long sampleSum1 = 0, sampleSum2 = 0;
+int  sampleCount = 0;
+int  avg1 = 4095, avg2 = 4095;
+unsigned long lastSampleMs = 0;
+const unsigned long SAMPLE_INTERVAL_MS = 1;
+
+// Timers
+unsigned long fireDisappearedTime = 0;
+const unsigned long alarmDuration = 10000;  // 10s countdown after resolve
+
+// States
+bool alarmActive    = false;
+bool fireNow        = false;
+bool fire1_detected = false;
+bool fire2_detected = false;
+bool lastFireSent   = false;
+bool resolvedByApp  = false;
+int  lastStallMask  = 0;
+
+unsigned long lastHeartbeatMs    = 0;
+unsigned long lastStatusSendMs   = 0;
+unsigned long lastLcdUpdateMs    = 0;
+unsigned long lastWifiCheckMs    = 0;
+unsigned long lastResolveCheckMs = 0;
+
+const unsigned long HEARTBEAT_INTERVAL_MS  = 10000;
+const unsigned long STATUS_INTERVAL_MS     = 30000;
+const unsigned long LCD_INTERVAL_MS        = 200;
+const unsigned long WIFI_CHECK_MS          = 10000;
+const unsigned long RESOLVE_CHECK_INTERVAL = 3000;
+
+// HTTP rate limit
+unsigned long lastHttpSentMs = 0;
+const unsigned long MIN_HTTP_INTERVAL_MS = 2000;
+
+// Buzzer state tracker
+int currentBuzzerFreq = -1;
+
+// Global TLS client
+WiFiClientSecure secureClient;
+
+// HTTP Queue
+struct HttpTask {
+  String url;
+  String body;
+  bool pending;
+  bool isGet;   // true = GET, false = POST
+};
+HttpTask httpQueue[3];
+int httpSendSlot = 0;
+
+void setBuzzer(int freq) {
+  if (currentBuzzerFreq != freq) {
+    if (freq > 0) tone(BUZZER_PIN, freq);
+    else {
+      noTone(BUZZER_PIN);
+      digitalWrite(BUZZER_PIN, LOW);
+    }
+    currentBuzzerFreq = freq;
+  }
+}
+
+String locationFromStalls(bool s1, bool s2) {
+  if (s1 && s2) return "BOTH";
+  if (s1) return "STALL 1";
+  if (s2) return "STALL 2";
+  return "STALL 1";
+}
+
+String getJson(const String& url) {
+  if (WiFi.status() != WL_CONNECTED) return "";
+
+  HTTPClient http;
+  http.begin(secureClient, url);
+  http.setTimeout(5000);
+  int code = http.GET();
+  String body = "";
+  if (code == 200) body = http.getString();
+  else Serial.printf("[HTTP GET] code=%d url=%s\n", code, url.c_str());
+  http.end();
+  return body;
+}
+
+bool postJson(const String& url, const String& body) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[HTTP] WiFi not connected, skipping");
+    return false;
+  }
+
+  Serial.println("[HTTP] POST -> " + url);
+  HTTPClient http;
+  http.begin(secureClient, url);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(5000);
+  int code = http.POST(body);
+  bool ok = (code >= 200 && code < 300);
+  Serial.printf("[HTTP] Response: %d (%s)\n", code, ok ? "OK" : "FAIL");
+  http.end();
+  return ok;
+}
+
+void enqueuePost(int slot, const String& url, const String& body) {
+  httpQueue[slot] = { url, body, true, false };
+}
+
+void enqueueGet(int slot, const String& url) {
+  httpQueue[slot] = { url, "", true, true };
+}
+
+void flushOneHttp() {
+  unsigned long now = millis();
+  if (now - lastHttpSentMs < MIN_HTTP_INTERVAL_MS) return;
+
+  for (int i = 0; i < 3; i++) {
+    int slot = (httpSendSlot + i) % 3;
+    if (!httpQueue[slot].pending) continue;
+
+    String url = httpQueue[slot].url;
+    String body = httpQueue[slot].body;
+    bool isGet = httpQueue[slot].isGet;
+    httpQueue[slot].pending = false;
+    httpSendSlot = (slot + 1) % 3;
+    lastHttpSentMs = now;
+
+    if (isGet) {
+      String response = getJson(url);
+      Serial.println("[RESOLVE CHECK] Response: " + response);
+      if (response.indexOf("\"resolved\":true") >= 0) {
+        if (!resolvedByApp) {
+          resolvedByApp = true;
+          fireDisappearedTime = millis();
+          Serial.println("[RESOLVE] App resolved the alarm!");
+        }
+      }
+    } else {
+      postJson(url, body);
+    }
+    return;
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(SENSOR_STALL_1, INPUT);
+  pinMode(SENSOR_STALL_2, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  secureClient.setInsecure();
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print(" IOT FIRE ALARM ");
+
+  for (int i = 0; i < 4; i++) {
+    lcd.setCursor(0, 1);
+    lcd.print(" INITIALIZING...");
+    delay(500);
+    lcd.setCursor(0, 1);
+    lcd.print("                ");
+    delay(200);
+  }
+  lcd.clear();
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  lcd.setCursor(0, 0);
+  lcd.print(" CONNECTING...  ");
+  Serial.print("[WiFi] Connecting");
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+    delay(300);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] Connected: " + WiFi.localIP().toString());
+    lcd.setCursor(0, 1);
+    lcd.print(" WIFI CONNECTED ");
+  } else {
+    Serial.println("\n[WiFi] Failed!");
+    lcd.setCursor(0, 1);
+    lcd.print(" WIFI FAILED!   ");
+  }
+  delay(1500);
+  lcd.clear();
+
+  for (int i = 0; i < 3; i++) httpQueue[i].pending = false;
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  if (now - lastWifiCheckMs >= WIFI_CHECK_MS) {
+    lastWifiCheckMs = now;
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("[WiFi] Reconnecting...");
+      WiFi.reconnect();
+    }
+  }
+
+  if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
+    lastSampleMs = now;
+    sampleSum1 += analogRead(SENSOR_STALL_1);
+    sampleSum2 += analogRead(SENSOR_STALL_2);
+    sampleCount++;
+
+    if (sampleCount >= SAMPLES) {
+      avg1 = sampleSum1 / SAMPLES;
+      avg2 = sampleSum2 / SAMPLES;
+      sampleSum1 = sampleSum2 = 0;
+      sampleCount = 0;
+    }
+  }
+
+  fire1_detected = (avg1 < THRESHOLD_ON);
+  fire2_detected = (avg2 < THRESHOLD_ON);
+
+  int currentStallMask = (fire1_detected ? 1 : 0) | (fire2_detected ? 2 : 0);
+
+  if (fire1_detected || fire2_detected) fireNow = true;
+  else if (avg1 > THRESHOLD_OFF && avg2 > THRESHOLD_OFF) fireNow = false;
+
+  if (!fireNow) {
+    currentStallMask = 0;
+  }
+
+  if (fireNow) {
+    if (!alarmActive) {
+      alarmActive = true;
+      resolvedByApp = false;
+    }
+    if (resolvedByApp) {
+      resolvedByApp = false;
+      Serial.println("[STATE] Fire re-detected after resolve - cancelling countdown");
+    }
+  } else {
+    if (alarmActive) {
+      if (!resolvedByApp) {
+        // Waiting for app to press resolve
+      } else {
+        if (now - fireDisappearedTime >= alarmDuration) {
+          alarmActive = false;
+          resolvedByApp = false;
+          lcd.clear();
+          Serial.println("[STATE] Alarm fully cleared");
+        }
+      }
+    }
+  }
+
+  if (now - lastLcdUpdateMs >= LCD_INTERVAL_MS) {
+    lastLcdUpdateMs = now;
+
+    if (fireNow) {
+      lcd.setCursor(0, 0);
+      lcd.print(" FIRE DETECTED  ");
+      lcd.setCursor(0, 1);
+      if (fire1_detected && fire2_detected) lcd.print(" STALLS 1 & 2  ");
+      else if (fire1_detected) lcd.print("    STALL 1    ");
+      else lcd.print("    STALL 2    ");
+    } else if (alarmActive && !resolvedByApp) {
+      lcd.setCursor(0, 0);
+      lcd.print(" FIRE CLEARED  ");
+      lcd.setCursor(0, 1);
+      lcd.print(" RESOLVE IN APP");
+    } else if (alarmActive && resolvedByApp) {
+      int secondsLeft = (alarmDuration - (now - fireDisappearedTime)) / 1000;
+      lcd.setCursor(0, 0);
+      lcd.print("  FIRE CLEARED ");
+      char line2[17];
+      sprintf(line2, " RESET IN: %2ds ", secondsLeft);
+      lcd.setCursor(0, 1);
+      lcd.print(line2);
+    } else {
+      lcd.setCursor(0, 0);
+      lcd.print(" AREA MONITORED ");
+      lcd.setCursor(0, 1);
+      lcd.print(" NO FIRE DETECT ");
+    }
+  }
+
+  if (alarmActive && !resolvedByApp) {
+    setBuzzer(1200);
+  } else if (alarmActive && resolvedByApp) {
+    if (now % 1000 < 300) setBuzzer(800);
+    else setBuzzer(0);
+  } else {
+    setBuzzer(0);
+  }
+
+  if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeatMs = now;
+    String payload = String("{\"stall1\":") + (fire1_detected ? "true" : "false") +
+                     ",\"stall2\":" + (fire2_detected ? "true" : "false") + "}";
+    enqueuePost(0, String(BASE_URL) + SENSOR_STATUS_PATH, payload);
+  }
+
+  bool fireStateChanged = (fireNow != lastFireSent);
+  bool periodicStatus = (now - lastStatusSendMs >= STATUS_INTERVAL_MS);
+  bool stallChanged = fireNow && (currentStallMask != lastStallMask);
+
+  if (fireStateChanged || periodicStatus || stallChanged) {
+    lastStatusSendMs = now;
+    lastFireSent = fireNow;
+    lastStallMask = currentStallMask;
+
+    String statusValue = fireNow ? "FIRE" : "NORMAL";
+    String loc = locationFromStalls(fire1_detected, fire2_detected);
+    String msg = fireNow ? "Fire detected by ESP32" : "No fire detected";
+
+    String payload = String("{\"status\":\"") + statusValue +
+                     "\",\"location\":\"" + loc +
+                     "\",\"message\":\"" + msg + "\"}";
+    enqueuePost(1, String(BASE_URL) + FIRE_ALERT_PATH, payload);
+  }
+
+  if (alarmActive && !resolvedByApp) {
+    if (now - lastResolveCheckMs >= RESOLVE_CHECK_INTERVAL) {
+      lastResolveCheckMs = now;
+      enqueueGet(2, String(BASE_URL) + CHECK_RESOLVED_PATH);
+    }
+  }
+
+  flushOneHttp();
+}
