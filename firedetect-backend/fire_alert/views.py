@@ -2,7 +2,7 @@ import requests
 import threading
 import time
 from datetime import timedelta
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404	
 from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.authentication import SessionAuthentication
@@ -158,9 +158,8 @@ class LatestStatusView(APIView):
 
 class CheckResolvedView(APIView):
 	def get(self, request):
-		try:
-			latest_alert = FireAlert.objects.latest('triggered_at')
-		except FireAlert.DoesNotExist:
+		latest_fire_alert = FireAlert.objects.filter(status=FireAlert.STATUS_FIRE).order_by('-triggered_at').first()
+		if not latest_fire_alert:
 			return Response(
 				{
 					'resolved': True,
@@ -170,12 +169,12 @@ class CheckResolvedView(APIView):
 				status=status.HTTP_200_OK,
 			)
 
-		is_fire_active = latest_alert.status == FireAlert.STATUS_FIRE and not latest_alert.resolved
+		is_fire_active = not latest_fire_alert.resolved
 		return Response(
 			{
 				'resolved': not is_fire_active,
-				'status': latest_alert.status,
-				'triggered_at': latest_alert.triggered_at,
+				'status': latest_fire_alert.status,
+				'triggered_at': latest_fire_alert.triggered_at,
 			},
 			status=status.HTTP_200_OK,
 		)
@@ -223,12 +222,6 @@ class FireAlertView(APIView):
 			status=FireAlert.STATUS_FIRE,
 			resolved=False,
 		).exists()
-
-		if status_value == FireAlert.STATUS_NORMAL:
-			FireAlert.objects.filter(status=FireAlert.STATUS_FIRE, resolved=False).update(
-				resolved=True,
-				resolved_at=timezone.now(),
-			)
 
 		new_alert = FireAlert.objects.create(status=status_value, stall=stall_value, message=message)
 
