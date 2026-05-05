@@ -6,15 +6,15 @@ import { Vibration } from 'react-native';
 import { RINGTONE_STORAGE_KEY, RINGTONES } from '@/hooks/useRingtone';
 
 export const SOUND_MAP: Record<string, any> = {
-  'Fire-Alarm': require('../assets/sounds/Fire-Alarm.wav'),
-  'Iphone-Fire-Alarm': require('../assets/sounds/Iphone-Fire-Alarm.wav'),
+  'Fire-Alarm': require('../assets/sounds/fire_alarm.wav'),
+  'Iphone-Fire-Alarm': require('../assets/sounds/iphone_fire_alarm.wav'),
   'mixkit_access_allowed_tone_2869': require('../assets/sounds/mixkit_access_allowed_tone_2869.wav'),
   'mixkit_bell_notification_933': require('../assets/sounds/mixkit_bell_notification_933.wav'),
   'mixkit_clear_announce_tones_2861': require('../assets/sounds/mixkit_clear_announce_tones_2861.wav'),
   'mixkit_game_notification_wave_alarm_987': require('../assets/sounds/mixkit_game_notification_wave_alarm_987.wav'),
   'mixkit_happy_bells_notification_937': require('../assets/sounds/mixkit_happy_bells_notification_937.wav'),
   'mixkit_urgent_simple_tone_loop_2976': require('../assets/sounds/mixkit_urgent_simple_tone_loop_2976.wav'),
-  'Sunog (Brix)': require('../assets/sounds/Sunog (Brix).wav'),
+  'Sunog (Brix)': require('../assets/sounds/sunog_(brix).wav'),
 };
 
 export const useAlertSound = () => {

@@ -11,15 +11,15 @@ export const RINGTONE_STORAGE_KEY = 'selectedRingtone';
 export const DEFAULT_NOTIFICATION_CHANNEL_ID = 'mixkit_urgent_simple_tone_loop_2976';
 
 const SOUND_FILENAMES = [
-  'Fire-Alarm.wav',
-  'Iphone-Fire-Alarm.wav',
+  'fire_alarm.wav',
+  'iphone_fire_alarm.wav',
   'mixkit_urgent_simple_tone_loop_2976.wav',
   'mixkit_access_allowed_tone_2869.wav',
   'mixkit_bell_notification_933.wav',
   'mixkit_clear_announce_tones_2861.wav',
   'mixkit_game_notification_wave_alarm_987.wav',
   'mixkit_happy_bells_notification_937.wav',
-  'Sunog (Brix).wav',
+  'sunog_(brix).wav',
 ] as const;
 
 const toReadableLabel = (filename: string): string => {
