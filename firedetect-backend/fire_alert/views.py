@@ -9,6 +9,8 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.parsers import FormParser, JSONParser
 from rest_framework import status
 from rest_framework.response import Response
+from django.http import HttpResponse
+import json
 from rest_framework.views import APIView
 
 from .models import DeviceToken, FireAlert, SensorStatus
@@ -167,21 +169,25 @@ class CheckResolvedView(APIView):
 			resolved=False,
 		).order_by('-triggered_at').first()
 		if not latest_unresolved:
-			return Response(
-				{
-					'resolved': True,
-					'status': 'normal',
-					'triggered_at': None,
-				},
+			payload = {
+				'resolved': True,
+				'status': 'normal',
+				'triggered_at': None,
+			}
+			return HttpResponse(
+				json.dumps(payload, separators=(',', ':')),
+				content_type='application/json',
 				status=status.HTTP_200_OK,
 			)
 
-		return Response(
-			{
-				'resolved': False,
-				'status': latest_unresolved.status,
-				'triggered_at': latest_unresolved.triggered_at,
-			},
+		payload = {
+			'resolved': False,
+			'status': latest_unresolved.status,
+			'triggered_at': latest_unresolved.triggered_at.isoformat(),
+		}
+		return HttpResponse(
+			json.dumps(payload, separators=(',', ':')),
+			content_type='application/json',
 			status=status.HTTP_200_OK,
 		)
 
