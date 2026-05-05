@@ -394,20 +394,25 @@ void loop() {
           stall[s].resolvedByApp = false;
           Serial.printf("[STATE] Stall %d fully cleared\n", s + 1);
 
-          // Queue "normal" alert
+          bool allCleared = !stall[0].alarmActive && !stall[1].alarmActive;
           bool s1f = stall[0].fireDetected;
           bool s2f = stall[1].fireDetected;
           xSemaphoreGive(stallMutex);
 
-          char payload[200];
-          snprintf(payload, sizeof(payload),
-                   "{\"status\":\"normal\",\"stall\":\"%s\",\"message\":\"No fire detected\"}",
-                   stallFromFlags(s1f, s2f).c_str());
-          enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(payload));
+          if (allCleared) {
+            // Queue "normal" alert only when both stalls are cleared
+            char payload[200];
+            snprintf(payload, sizeof(payload),
+                     "{\"status\":\"normal\",\"stall\":\"%s\",\"message\":\"No fire detected\"}",
+                     stallFromFlags(s1f, s2f).c_str());
+            enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(payload));
+          }
 
           xSemaphoreTake(stallMutex, portMAX_DELAY);
           stall[s].lastFireSent = false;
-          lcd.clear();
+          if (allCleared) {
+            lcd.clear();
+          }
         }
       }
     }

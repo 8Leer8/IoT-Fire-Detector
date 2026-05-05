@@ -83,7 +83,10 @@ const DashboardScreen = () => {
 	const stall2Active = activeIncident?.stall_2_active ?? false;
 	const stall1Resolved = activeIncident?.stall_1_resolved ?? false;
 	const stall2Resolved = activeIncident?.stall_2_resolved ?? false;
-	const hasActiveFire = Boolean(activeIncident?.is_active);
+	const hasActiveFire = Boolean(
+		activeIncident?.is_active &&
+		((stall1Active && !stall1Resolved) || (stall2Active && !stall2Resolved))
+	);
 
 	const pollLatestStatus = async () => {
 		try {
@@ -157,13 +160,8 @@ const DashboardScreen = () => {
 	};
 
 	useEffect(() => {
-		if (hasActiveFire) {
-			void playAlertLoop();
-			return;
-		}
-
-		void stopAlert();
-	}, [hasActiveFire, playAlertLoop, stopAlert]);
+		void playAlertLoop(hasActiveFire);
+	}, [hasActiveFire, playAlertLoop]);
 
 	useEffect(() => {
 		return () => {

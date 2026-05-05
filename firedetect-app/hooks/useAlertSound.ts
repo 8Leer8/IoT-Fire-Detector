@@ -46,7 +46,12 @@ export const useAlertSound = () => {
     activeSoundIdRef.current = null;
   }, []);
 
-  const playAlertLoop = useCallback(async () => {
+  const playAlertLoop = useCallback(async (shouldPlay: boolean = true) => {
+    if (!shouldPlay) {
+      await stopAlert();
+      return;
+    }
+
     const storedId = await AsyncStorage.getItem(RINGTONE_STORAGE_KEY);
     const defaultId = RINGTONES[0]?.id;
     const selectedId = storedId && SOUND_MAP[storedId] ? storedId : defaultId;

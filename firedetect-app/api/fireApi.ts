@@ -62,7 +62,7 @@ export const getLatestStatus = async (): Promise<LatestStatusResponse> => {
 
 export const getAlertHistory = async (): Promise<FireAlertItem[]> => {
 	const baseUrl = await getBaseUrl();
-	const response = await axios.get<FireAlertItem[]>(`${baseUrl}/api/fire-alert/`);
+	const response = await axios.get<FireAlertItem[]>(`${baseUrl}/api/alerts/`);
 	return response.data;
 };
 

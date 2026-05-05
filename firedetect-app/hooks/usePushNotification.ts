@@ -57,6 +57,14 @@ const usePushNotification = (): string | null => {
 						sound: fallbackSound,
 					});
 
+					await Notifications.setNotificationChannelAsync('updates', {
+						name: 'Status Updates',
+						importance: Notifications.AndroidImportance.LOW,
+						vibrationPattern: [0],
+						lightColor: '#FF453A',
+						sound: undefined,
+					});
+
 					for (const ringtone of RINGTONES) {
 						await Notifications.setNotificationChannelAsync(ringtone.id, {
 							name: ringtone.label,

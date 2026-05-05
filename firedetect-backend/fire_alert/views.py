@@ -92,7 +92,11 @@ def _send_fire_push_once(stall_label: str, alert_body: str):
 def _is_fire_alert_active(alert_id: int) -> bool:
 	try:
 		alert = FireAlert.objects.get(id=alert_id)
-		return alert.status == FireAlert.STATUS_FIRE and not alert.resolved
+		return (
+			alert.status == FireAlert.STATUS_FIRE
+			and not alert.resolved
+			and (alert.stall_1_active or alert.stall_2_active)
+		)
 	except FireAlert.DoesNotExist:
 		return False
 
@@ -243,7 +247,7 @@ class FireAlertView(APIView):
 			)
 
 		active_incident = FireAlert.objects.filter(is_active=True).first()
-		had_active_fire_before = active_incident is not None
+		is_new_incident = active_incident is None
 
 		if active_incident:
 			active_incident.stall = stall_value
@@ -262,7 +266,7 @@ class FireAlertView(APIView):
 				stall_2_active=stall_2_active,
 			)
 
-		if status_value == FireAlert.STATUS_FIRE:
+		if status_value == FireAlert.STATUS_FIRE and is_new_incident:
 			stall_label = {
 				FireAlert.STALL_1: 'Stall 1',
 				FireAlert.STALL_2: 'Stall 2',
@@ -274,12 +278,11 @@ class FireAlertView(APIView):
 
 			_send_fire_push_once(stall_label=stall_label, alert_body=alert_body)
 
-			if not had_active_fire_before:
-				threading.Thread(
-					target=_repeat_fire_push_until_resolved,
-					args=(new_alert.id, stall_label, alert_body),
-					daemon=True,
-				).start()
+			threading.Thread(
+				target=_repeat_fire_push_until_resolved,
+				args=(new_alert.id, stall_label, alert_body),
+				daemon=True,
+			).start()
 
 		return Response(
 			{
@@ -355,25 +358,6 @@ class SensorStatusView(APIView):
 		sensor_status.stall1 = stall1
 		sensor_status.stall2 = stall2
 		sensor_status.save()
-
-		if stall1 or stall2:
-			incoming_stall = FireAlert.STALL_1
-			if stall1 and stall2:
-				incoming_stall = FireAlert.STALL_BOTH
-			elif stall2:
-				incoming_stall = FireAlert.STALL_2
-
-			latest_unresolved = FireAlert.objects.filter(
-				status=FireAlert.STATUS_FIRE,
-				resolved=False,
-			).order_by('-triggered_at').first()
-
-			if not latest_unresolved or latest_unresolved.stall != incoming_stall:
-				FireAlert.objects.create(
-					status=FireAlert.STATUS_FIRE,
-					stall=incoming_stall,
-					message='Fire detected by ESP32',
-				)
 
 		return Response(
 			{
