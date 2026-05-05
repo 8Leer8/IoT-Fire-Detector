@@ -19,7 +19,7 @@ const SOUND_FILENAMES = [
   'mixkit_clear_announce_tones_2861.wav',
   'mixkit_game_notification_wave_alarm_987.wav',
   'mixkit_happy_bells_notification_937.wav',
-  'sunog_(brix).wav',
+  'sunog_brix.wav',
 ] as const;
 
 const toReadableLabel = (filename: string): string => {

@@ -14,7 +14,7 @@ export const SOUND_MAP: Record<string, any> = {
   'mixkit_game_notification_wave_alarm_987': require('../assets/sounds/mixkit_game_notification_wave_alarm_987.wav'),
   'mixkit_happy_bells_notification_937': require('../assets/sounds/mixkit_happy_bells_notification_937.wav'),
   'mixkit_urgent_simple_tone_loop_2976': require('../assets/sounds/mixkit_urgent_simple_tone_loop_2976.wav'),
-  'sunog_(brix)': require('../assets/sounds/sunog_(brix).wav'),
+  'sunog_brix': require('../assets/sounds/sunog_brix.wav'),
 };
 
 export const useAlertSound = () => {
