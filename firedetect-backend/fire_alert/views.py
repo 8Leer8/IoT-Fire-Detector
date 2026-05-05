@@ -257,11 +257,31 @@ class FireAlertView(APIView):
 		is_new_incident = active_incident is None
 
 		if active_incident:
-			active_incident.stall = stall_value
-			active_incident.stall_1_active = stall_1_active
-			active_incident.stall_2_active = stall_2_active
-			active_incident.message = message
-			active_incident.save(update_fields=['stall', 'stall_1_active', 'stall_2_active', 'message'])
+			updated_fields = []
+			if stall_1_active and not active_incident.stall_1_active:
+				active_incident.stall_1_active = True
+				updated_fields.append('stall_1_active')
+			if stall_2_active and not active_incident.stall_2_active:
+				active_incident.stall_2_active = True
+				updated_fields.append('stall_2_active')
+
+			if active_incident.stall_1_active and active_incident.stall_2_active:
+				merged_stall_value = FireAlert.STALL_BOTH
+			elif active_incident.stall_2_active:
+				merged_stall_value = FireAlert.STALL_2
+			else:
+				merged_stall_value = FireAlert.STALL_1
+
+			if active_incident.stall != merged_stall_value:
+				active_incident.stall = merged_stall_value
+				updated_fields.append('stall')
+
+			if active_incident.message != message:
+				active_incident.message = message
+				updated_fields.append('message')
+
+			if updated_fields:
+				active_incident.save(update_fields=list(set(updated_fields)))
 			new_alert = active_incident
 		else:
 			new_alert = FireAlert.objects.create(

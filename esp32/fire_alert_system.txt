@@ -101,28 +101,12 @@ String stallFromFlags(bool s1, bool s2) {
   return "stall_1";
 }
 
-bool enqueuePost(const String& url, const String& body) {
+void enqueuePost(const String& url, const String& body) {
   HttpJob job;
   url.toCharArray(job.url, sizeof(job.url));
   body.toCharArray(job.body, sizeof(job.body));
   job.isGet = false;
-  if (xQueueSend(httpQueue, &job, 0) != pdTRUE) {
-    Serial.println("[QUEUE] Fire POST dropped (queue full)");
-    return false;
-  }
-  return true;
-}
-
-bool enqueueFirePost(const String& url, const String& body) {
-  HttpJob job;
-  url.toCharArray(job.url, sizeof(job.url));
-  body.toCharArray(job.body, sizeof(job.body));
-  job.isGet = false;
-  if (xQueueSend(httpQueue, &job, pdMS_TO_TICKS(200)) != pdTRUE) {
-    Serial.println("[QUEUE] Fire POST dropped after wait");
-    return false;
-  }
-  return true;
+  xQueueSend(httpQueue, &job, 0);
 }
 
 void enqueueGet(const String& url) {
@@ -130,9 +114,7 @@ void enqueueGet(const String& url) {
   url.toCharArray(job.url, sizeof(job.url));
   job.body[0] = '\0';
   job.isGet = true;
-  if (xQueueSend(httpQueue, &job, 0) != pdTRUE) {
-    Serial.println("[QUEUE] GET dropped (queue full)");
-  }
+  xQueueSend(httpQueue, &job, 0);
 }
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -336,7 +318,7 @@ void setup() {
   delay(1500);
   lcd.clear();
 
-  httpQueue  = xQueueCreate(20, sizeof(HttpJob));
+  httpQueue  = xQueueCreate(10, sizeof(HttpJob));
   stallMutex = xSemaphoreCreateMutex();
 
   xTaskCreatePinnedToCore(
@@ -382,7 +364,6 @@ void loop() {
   // Collect actions — never enqueue inside the mutex
   bool shouldPostFire   = false;
   bool shouldPostNormal = false;
-  int fireTriggerStall  = -1;
   char firePayload[200]   = {};
   char normalPayload[200] = {};
 
@@ -391,9 +372,8 @@ void loop() {
       if (!stall[s].alarmActive) {
         stall[s].alarmActive   = true;
         stall[s].resolvedByApp = false;
-        stall[s].lastFireSent  = false;
+        stall[s].lastFireSent  = true;
         Serial.printf("[STATE] Stall %d alarm activated\n", s + 1);
-        fireTriggerStall = s;
 
         bool s1f = stall[0].fireDetected;
         bool s2f = stall[1].fireDetected;
@@ -407,7 +387,6 @@ void loop() {
         if (now - stall[s].fireDisappearedTime >= ALARM_CLEAR_DURATION) {
           stall[s].alarmActive   = false;
           stall[s].resolvedByApp = false;
-          stall[s].lastFireSent  = false;
           Serial.printf("[STATE] Stall %d fully cleared\n", s + 1);
         }
       }
@@ -417,11 +396,13 @@ void loop() {
   // Send "normal" only when both stalls are fully cleared
   bool allCleared = !stall[0].alarmActive && !stall[1].alarmActive;
   bool anyWasFire = stall[0].lastFireSent || stall[1].lastFireSent;
-  if (allCleared && !anyWasFire && !shouldPostFire) {
+  if (allCleared && anyWasFire && !shouldPostFire) {
     // Both just cleared this tick — send normal
     snprintf(normalPayload, sizeof(normalPayload),
              "{\"status\":\"normal\",\"stall\":\"stall_1\",\"message\":\"No fire detected\"}");
     shouldPostNormal = true;
+    stall[0].lastFireSent = false;
+    stall[1].lastFireSent = false;
   }
 
   // Snapshot for LCD/buzzer
@@ -438,17 +419,8 @@ void loop() {
   xSemaphoreGive(stallMutex);
 
   // ── Enqueue HTTP jobs OUTSIDE mutex ───────────────────────────────────────
-  if (shouldPostFire) {
-    bool queued = enqueueFirePost(String(BASE_URL) + FIRE_ALERT_PATH, String(firePayload));
-    if (queued && fireTriggerStall >= 0) {
-      xSemaphoreTake(stallMutex, portMAX_DELAY);
-      stall[fireTriggerStall].lastFireSent = true;
-      xSemaphoreGive(stallMutex);
-    }
-  }
-  if (shouldPostNormal) {
-    enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(normalPayload));
-  }
+  if (shouldPostFire)   enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(firePayload));
+  if (shouldPostNormal) enqueuePost(String(BASE_URL) + FIRE_ALERT_PATH, String(normalPayload));
 
   bool s1unresolved  = s1alarm && !s1res;
   bool s2unresolved  = s2alarm && !s2res;
