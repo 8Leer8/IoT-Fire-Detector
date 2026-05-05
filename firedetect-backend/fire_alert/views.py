@@ -2,7 +2,6 @@ import requests
 import threading
 import time
 from datetime import timedelta
-from django.shortcuts import get_object_or_404	
 from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.authentication import SessionAuthentication
@@ -164,15 +163,11 @@ class LatestStatusView(APIView):
 
 class CheckResolvedView(APIView):
 	def get(self, request):
-		latest_unresolved = FireAlert.objects.filter(
-			status=FireAlert.STATUS_FIRE,
-			resolved=False,
-		).order_by('-triggered_at').first()
-		if not latest_unresolved:
+		active_incident = FireAlert.objects.filter(is_active=True).first()
+		if not active_incident:
 			payload = {
-				'resolved': True,
-				'status': 'normal',
-				'triggered_at': None,
+				'stall1_resolved': True,
+				'stall2_resolved': True,
 			}
 			return HttpResponse(
 				json.dumps(payload, separators=(',', ':')),
@@ -181,9 +176,8 @@ class CheckResolvedView(APIView):
 			)
 
 		payload = {
-			'resolved': False,
-			'status': latest_unresolved.status,
-			'triggered_at': latest_unresolved.triggered_at.isoformat(),
+			'stall1_resolved': active_incident.stall_1_resolved,
+			'stall2_resolved': active_incident.stall_2_resolved,
 		}
 		return HttpResponse(
 			json.dumps(payload, separators=(',', ':')),
@@ -230,7 +224,14 @@ class FireAlertView(APIView):
 		elif location in {'BOTH', 'BOTH STALLS'}:
 			stall_value = FireAlert.STALL_BOTH
 
+		stall_1_active = stall_value in {FireAlert.STALL_1, FireAlert.STALL_BOTH}
+		stall_2_active = stall_value in {FireAlert.STALL_2, FireAlert.STALL_BOTH}
+
 		if status_value == FireAlert.STATUS_NORMAL:
+			active_incident = FireAlert.objects.filter(is_active=True).first()
+			if active_incident:
+				active_incident.is_active = False
+				active_incident.save(update_fields=['is_active'])
 			return Response(
 				{
 					'status': 'success',
@@ -241,12 +242,25 @@ class FireAlertView(APIView):
 				status=status.HTTP_200_OK,
 			)
 
-		had_active_fire_before = FireAlert.objects.filter(
-			status=FireAlert.STATUS_FIRE,
-			resolved=False,
-		).exists()
+		active_incident = FireAlert.objects.filter(is_active=True).first()
+		had_active_fire_before = active_incident is not None
 
-		new_alert = FireAlert.objects.create(status=status_value, stall=stall_value, message=message)
+		if active_incident:
+			active_incident.stall = stall_value
+			active_incident.stall_1_active = stall_1_active
+			active_incident.stall_2_active = stall_2_active
+			active_incident.message = message
+			active_incident.save(update_fields=['stall', 'stall_1_active', 'stall_2_active', 'message'])
+			new_alert = active_incident
+		else:
+			new_alert = FireAlert.objects.create(
+				status=status_value,
+				stall=stall_value,
+				message=message,
+				is_active=True,
+				stall_1_active=stall_1_active,
+				stall_2_active=stall_2_active,
+			)
 
 		if status_value == FireAlert.STATUS_FIRE:
 			stall_label = {
@@ -279,26 +293,41 @@ class FireAlertView(APIView):
 		)
 
 
-class ResolveAlertView(APIView):
+class FireAlertResolveView(APIView):
 	authentication_classes = []
 	permission_classes = [permissions.AllowAny]
 	parser_classes = [JSONParser, FormParser]
 
-	def get(self, request, id):
-		return self.post(request, id)
+	def post(self, request):
+		stall = request.data.get('stall')
+		if stall not in {'stall_1', 'stall_2', 'both'}:
+			return Response(
+				{'message': 'stall must be one of: stall_1, stall_2, both'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
 
-	def post(self, request, id):
-		alert = get_object_or_404(FireAlert, id=id)
-		if alert.status != FireAlert.STATUS_FIRE:
-			return Response({'message': 'Alert is not active'}, status=status.HTTP_200_OK)
-		if alert.resolved:
-			return Response({'message': 'Alert already resolved'}, status=status.HTTP_200_OK)
+		active_incident = FireAlert.objects.filter(is_active=True).first()
+		if not active_incident:
+			return Response({'message': 'No active incident'}, status=status.HTTP_404_NOT_FOUND)
 
-		alert.resolved = True
-		alert.resolved_at = timezone.now()
-		alert.save(update_fields=['resolved', 'resolved_at'])
+		fields_to_update = []
+		if stall in {'stall_1', 'both'} and not active_incident.stall_1_resolved:
+			active_incident.stall_1_resolved = True
+			fields_to_update.append('stall_1_resolved')
+		if stall in {'stall_2', 'both'} and not active_incident.stall_2_resolved:
+			active_incident.stall_2_resolved = True
+			fields_to_update.append('stall_2_resolved')
 
-		return Response({'message': 'Alert resolved'}, status=status.HTTP_200_OK)
+		if active_incident.stall_1_resolved and active_incident.stall_2_resolved:
+			active_incident.resolved = True
+			active_incident.is_active = False
+			active_incident.resolved_at = timezone.now()
+			fields_to_update.extend(['resolved', 'is_active', 'resolved_at'])
+
+		if fields_to_update:
+			active_incident.save(update_fields=list(set(fields_to_update)))
+		serializer = FireAlertSerializer(active_incident)
+		return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class SensorStatusView(APIView):

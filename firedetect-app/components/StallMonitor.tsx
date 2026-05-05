@@ -12,8 +12,10 @@ import { useAppTheme } from '@/hooks/useAppTheme';
 
 interface StallMonitorProps {
   status: 'fire' | 'normal';
-  stall: 'stall_1' | 'stall_2' | 'both' | null;
-  resolved: boolean;
+  stall1Active: boolean;
+  stall2Active: boolean;
+  stall1Resolved: boolean;
+  stall2Resolved: boolean;
   isOnline: boolean;
   lastSeen: string;
 }
@@ -163,13 +165,13 @@ const StallCard = ({ label, active, isOnline, lastSeenLabel, colors }: StallCard
   );
 };
 
-const StallMonitor = ({ status, stall, resolved, isOnline, lastSeen }: StallMonitorProps) => {
+const StallMonitor = ({ status, stall1Active, stall2Active, stall1Resolved, stall2Resolved, isOnline, lastSeen }: StallMonitorProps) => {
   const { colorScheme: scheme } = useAppTheme();
   const colors = getColors(scheme);
 
-  const isFireActive = isOnline && status === 'fire' && !resolved;
-  const stall1Active = isFireActive && (stall === 'stall_1' || stall === 'both');
-  const stall2Active = isFireActive && (stall === 'stall_2' || stall === 'both');
+  const isFireActive = isOnline && status === 'fire';
+  const stall1IsActive = isFireActive && stall1Active && !stall1Resolved;
+  const stall2IsActive = isFireActive && stall2Active && !stall2Resolved;
 
   const formatLastSeen = (value: string) => {
     if (!value) {
@@ -197,14 +199,14 @@ const StallMonitor = ({ status, stall, resolved, isOnline, lastSeen }: StallMoni
     <View style={styles.container}>
       <StallCard
         label="Stall 1"
-        active={stall1Active}
+        active={stall1IsActive}
         isOnline={isOnline}
         lastSeenLabel={lastSeenText}
         colors={colors}
       />
       <StallCard
         label="Stall 2"
-        active={stall2Active}
+        active={stall2IsActive}
         isOnline={isOnline}
         lastSeenLabel={lastSeenText}
         colors={colors}

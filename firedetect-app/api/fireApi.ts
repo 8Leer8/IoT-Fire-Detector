@@ -8,6 +8,11 @@ export interface FireAlertItem {
 	id?: number;
 	status: FireStatus;
 	stall: StallType;
+	stall_1_active?: boolean;
+	stall_2_active?: boolean;
+	stall_1_resolved?: boolean;
+	stall_2_resolved?: boolean;
+	is_active?: boolean;
 	resolved: boolean;
 	resolved_at?: string | null;
 	triggered_at: string;
@@ -57,13 +62,18 @@ export const getLatestStatus = async (): Promise<LatestStatusResponse> => {
 
 export const getAlertHistory = async (): Promise<FireAlertItem[]> => {
 	const baseUrl = await getBaseUrl();
-	const response = await axios.get<FireAlertItem[]>(`${baseUrl}/api/alerts/`);
+	const response = await axios.get<FireAlertItem[]>(`${baseUrl}/api/fire-alert/`);
 	return response.data;
 };
 
 export const resolveAlert = async (id: number): Promise<void> => {
 	const baseUrl = await getBaseUrl();
 	await axios.post(`${baseUrl}/api/alerts/${id}/resolve/`);
+};
+
+export const resolveStall = async (stall: 'stall_1' | 'stall_2' | 'both'): Promise<void> => {
+	const baseUrl = await getBaseUrl();
+	await axios.post(`${baseUrl}/api/fire-alert/resolve/`, { stall });
 };
 
 export interface SensorStatusResponse {

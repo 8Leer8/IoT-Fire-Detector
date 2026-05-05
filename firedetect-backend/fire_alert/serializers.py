@@ -12,7 +12,20 @@ class DeviceTokenSerializer(serializers.ModelSerializer):
 class FireAlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = FireAlert
-        fields = ['id', 'status', 'stall', 'resolved', 'resolved_at', 'triggered_at', 'message']
+        fields = [
+            'id',
+            'status',
+            'stall',
+            'stall_1_active',
+            'stall_2_active',
+            'stall_1_resolved',
+            'stall_2_resolved',
+            'is_active',
+            'resolved',
+            'resolved_at',
+            'triggered_at',
+            'message',
+        ]
 
 
 class FireAlertIngestSerializer(serializers.Serializer):

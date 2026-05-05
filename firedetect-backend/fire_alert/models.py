@@ -29,6 +29,11 @@ class FireAlert(models.Model):
 
 	status = models.CharField(max_length=10, choices=STATUS_CHOICES)
 	stall = models.CharField(max_length=10, choices=STALL_CHOICES, default=STALL_1)
+	stall_1_active = models.BooleanField(default=False)
+	stall_2_active = models.BooleanField(default=False)
+	stall_1_resolved = models.BooleanField(default=False)
+	stall_2_resolved = models.BooleanField(default=False)
+	is_active = models.BooleanField(default=True)
 	resolved = models.BooleanField(default=False)
 	resolved_at = models.DateTimeField(null=True, blank=True)
 	triggered_at = models.DateTimeField(auto_now_add=True)
