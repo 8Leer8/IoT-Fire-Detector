@@ -228,8 +228,15 @@ class FireAlertView(APIView):
 		elif location in {'BOTH', 'BOTH STALLS'}:
 			stall_value = FireAlert.STALL_BOTH
 
-		stall_1_active = stall_value in {FireAlert.STALL_1, FireAlert.STALL_BOTH}
-		stall_2_active = stall_value in {FireAlert.STALL_2, FireAlert.STALL_BOTH}
+		if stall_value == FireAlert.STALL_1:
+			stall_1_active = True
+			stall_2_active = False
+		elif stall_value == FireAlert.STALL_2:
+			stall_1_active = False
+			stall_2_active = True
+		else:
+			stall_1_active = True
+			stall_2_active = True
 
 		if status_value == FireAlert.STATUS_NORMAL:
 			active_incident = FireAlert.objects.filter(is_active=True).first()
