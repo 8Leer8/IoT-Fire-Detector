@@ -218,6 +218,17 @@ class FireAlertView(APIView):
 		elif location in {'BOTH', 'BOTH STALLS'}:
 			stall_value = FireAlert.STALL_BOTH
 
+		if status_value == FireAlert.STATUS_NORMAL:
+			return Response(
+				{
+					'status': 'success',
+					'message': 'Normal status received',
+					'fire_status': status_value,
+					'stall': stall_value,
+				},
+				status=status.HTTP_200_OK,
+			)
+
 		had_active_fire_before = FireAlert.objects.filter(
 			status=FireAlert.STATUS_FIRE,
 			resolved=False,
